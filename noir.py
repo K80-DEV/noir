@@ -10099,7 +10099,7 @@ HELP_BODIES = {
 <li>Generate something long and random - a password manager works, or on the box: <code>openssl rand -hex 24</code> (48 characters). The floor is <b>32 printable characters</b>; anything shorter is refused with a plain "no".</li>
 <li>As the <b>owner</b>, open Settings &rarr; <b>Session card</b> &rarr; <b>v1 door token</b>. Paste, save. The field is write-only like every secret here: once set, the server never shows it again - only whether it is set.</li>
 <li>In the app: <b>base URL</b> = your Noir's address with <code>/v1</code> on the end (direct on the LAN: <code>http://BOX:8470/v1</code>; through your front proxy: the address it serves, plus <code>/v1</code>). <b>API key</b> field = your token. If the app asks for a model name, type your saved model's name (or anything - see above).</li>
-<li>Prove the wire from a terminal: <code>curl -s https://YOUR-CAIRN/v1/chat/completions -H "Authorization: Bearer YOUR-TOKEN" -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"ping"}]}'</code> - JSON with an answer back means the door works end to end.</li>
+<li>Prove the wire from a terminal: <code>curl -s https://YOUR-NOIR/v1/chat/completions -H "Authorization: Bearer YOUR-TOKEN" -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"ping"}]}'</code> - JSON with an answer back means the door works end to end.</li>
 </ol>
 <h2>What the door says when it will not open</h2>
 <table><tr><th>Answer</th><th>Meaning</th></tr>
@@ -28750,7 +28750,7 @@ def _tls_generate(san_extra=""):
         _run(["genpkey", "-algorithm", "RSA", "-pkeyopt", "rsa_keygen_bits:4096", "-out", ca_key], "CA keygen")
         os.chmod(ca_key, 0o600)
         _run(["req", "-x509", "-new", "-sha256", "-days", "3650", "-key", ca_key,
-              "-subj", "/CN=CAIRN Local CA",
+              "-subj", "/CN=NOIR Local CA",
               "-addext", "basicConstraints=critical,CA:TRUE",
               "-addext", "keyUsage=critical,keyCertSign,cRLSign",
               "-addext", "nameConstraints=" + _r13_name_constraints(san_extra),

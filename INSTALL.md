@@ -269,7 +269,7 @@ your previous pin is kept in `state/update-pin.json` history. Never hand-edit
 that file — the rotation above is the only supported way the pin moves.
 
 ## 8. Crossing the river (0.6x → 0.7a)
-The renamed era moved: the file (`marahome.py` → `cairn.py`), the environment
+The renamed era moved: the file (《marahome.py》 → 《cairn.py》 → 《noir.py》 at 0.8), the environment
 spellings (`MARA_*` → `CAIRN_*`), the state roots (`/var/lib/mara` →
 `/var/lib/cairn`, `/etc/mara` → `/etc/cairn`), and the door header
 (`X-Mara-Slug` → `X-Cairn-Slug`). The door header and path ladders went in
