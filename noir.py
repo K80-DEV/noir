@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cairn daemon — CAIRN, a home for your resident
+noir daemon — NOIR, a home for your resident
 Mara | Auth: K80 | 2026-09-15
 
 Full web GUI + agent loop + tools + streaming chat.
@@ -8,7 +8,7 @@ Python 3.13 stdlib only. No dependencies. Boring on purpose.
 
 Architecture:
   Browser/Phone → Caddy (TLS :8443/mara/*) → 127.0.0.1:8470 (this daemon) → Featherless API
-  Tools execute locally on CAIRN.
+  Tools execute locally on NOIR.
 
 Endpoints:
   GET  /                    → Web UI (chat)
@@ -59,7 +59,14 @@ from queue import Queue
 from html.parser import HTMLParser
 
 # ─── Paths ───────────────────────────────────────────────────────────────────
-BASE = Path(os.environ.get("CAIRN_HOME", "/var/lib/cairn"))
+# NOIR rename 2026-10-27: NOIR_* is the canonical env prefix. Legacy CAIRN_*
+# names are still accepted (mirrored into NOIR_* at import) so units written
+# before the rename keep working untouched. Removal: post-0.8 release.
+for _legacy_k in list(os.environ):
+    if _legacy_k.startswith("CAIRN_"):
+        os.environ.setdefault("NOIR_" + _legacy_k[6:], os.environ[_legacy_k])
+
+BASE = Path(os.environ.get("NOIR_HOME", "/var/lib/cairn"))
 # R1 GREAT RENAME (0.7a) CLOSED at 0.7c: CAIRN_* env names are the ONLY
 # spellings. The four HOME/REGISTRY/HOST/PORT fallbacks survived 0.7b on
 # purpose - they were the F20 smoke-harness upgrade contract (a pre-0.7b
@@ -74,7 +81,7 @@ BASE = Path(os.environ.get("CAIRN_HOME", "/var/lib/cairn"))
 # marahome.service) and renamed-era (cairn.py / cairn.service) boxes - the
 # live file's own name is the one thing that must never be hardcoded.
 SELF_NAME = os.path.basename(os.path.abspath(__file__))
-SERVICE_UNIT = os.environ.get("CAIRN_UNIT") or (SELF_NAME[:-3] if SELF_NAME.endswith(".py") else "marahome")
+SERVICE_UNIT = os.environ.get("NOIR_UNIT") or (SELF_NAME[:-3] if SELF_NAME.endswith(".py") else "marahome")
 def _default_registry_path():
     # 0.7b: the mara-era default probe is gone - cairn-migrate (U16) moved the
     # river and this box proves it (/etc/mara no longer exists). One bank only.
@@ -97,17 +104,17 @@ LOGS = BASE / "logs"
 DB_PATH = STATE / "conversations.db"
 # P3.3 S2: daemon owner - backfill target + owner-scoped reads (/health, /v1, memory)
 # R1 (v0.6n, K80 ruling 2026-09-24 10:00): the instance owner is DERIVED, never baked
-# in. Order: env CAIRN_OWNER (the MARA_OWNER fallback died at 0.7b) ->
+# in. Order: env NOIR_OWNER (the MARA_OWNER fallback died at 0.7b) ->
 # registry owner row (the answer the first-boot wizard already collects) -> neutral
 # "owner" placeholder (pre-wizard only; the wizard promotes the real name on creation).
 # Shipped artifacts carry zero personal defaults.
 def _r1_derive_owner():
-    _env = os.environ.get("CAIRN_OWNER", "").strip()
+    _env = os.environ.get("NOIR_OWNER", "").strip()
     if _env:
         return _env
     try:
         import sqlite3 as _r1_sq
-        _reg = os.environ.get("CAIRN_REGISTRY", _default_registry_path())
+        _reg = os.environ.get("NOIR_REGISTRY", _default_registry_path())
         with _r1_sq.connect("file:" + _reg + "?mode=ro", uri=True, timeout=2) as _r1db:
             _row = _r1db.execute("SELECT username FROM users WHERE role='owner' "
                                  "AND status='active' ORDER BY created_at LIMIT 1").fetchone()
@@ -204,20 +211,20 @@ COMPACTION_THRESHOLD = 0.80  # PATCH56/U39a marker
 # PATCH56/U39a (K80 ask): the old collar of 10 throttled real agent
 # turns. Ceiling now = the P1-H/U whole-turn fuse (200 tool calls);
 # since each continuing iteration costs >=1 tool call, the loop stays
-# bounded regardless. Override via env CAIRN_MAX_TOOL_ITERATIONS.
-MAX_TOOL_ITERATIONS = int(os.environ.get("CAIRN_MAX_TOOL_ITERATIONS", "200"))
-HOST = os.environ.get("CAIRN_HOST", "127.0.0.1")
-PORT = int(os.environ.get("CAIRN_PORT", "8470"))
-# P3.3 S3: daemon-level tools kill switch (lite instance runs CAIRN_TOOLS=off
+# bounded regardless. Override via env NOIR_MAX_TOOL_ITERATIONS.
+MAX_TOOL_ITERATIONS = int(os.environ.get("NOIR_MAX_TOOL_ITERATIONS", "200"))
+HOST = os.environ.get("NOIR_HOST", "127.0.0.1")
+PORT = int(os.environ.get("NOIR_PORT", "8470"))
+# P3.3 S3: daemon-level tools kill switch (lite instance runs NOIR_TOOLS=off
 # - chat only). 0.7b: the MARA_TOOLS spelling retired with the fallbacks.
-TOOLS_ENABLED = os.environ.get("CAIRN_TOOLS", "on").strip().lower() != "off"
-# P3.3 S3p-v2: instance tier (env CAIRN_TIER, from /etc/cairn/agents/<slug>.env;
+TOOLS_ENABLED = os.environ.get("NOIR_TOOLS", "on").strip().lower() != "off"
+# P3.3 S3p-v2: instance tier (env NOIR_TIER, from /etc/cairn/agents/<slug>.env;
 # the MARA_TIER fallback died at 0.7b).
 # owner/admin tier: full tools, user role must be admin|owner.
 # user tier: web_search + web_fetch only (filtered below, enforced at dispatch).
 # Unknown tier fails closed to the web-only set. The hand-provisioned owner
 # instance has no env file -> defaults to "owner" (its historical behavior).
-TIER = os.environ.get("CAIRN_TIER", "owner").strip().lower()
+TIER = os.environ.get("NOIR_TIER", "owner").strip().lower()
 TIER_TOOLS = {"owner": None, "admin": None, "user": frozenset(("web_search", "web_fetch", "memory", "recall",
                            "list_conversations", "read_conversation"))}
 # ─── Uploads & attachments (P3.2) ─────────────────────────────────────────────
@@ -232,8 +239,8 @@ def _env_bytes(name, default):
         return v if v >= 0 else default
     except (ValueError, TypeError):
         return default
-USER_UPLOAD_QUOTA = _env_bytes("CAIRN_USER_UPLOAD_QUOTA_BYTES", 256 * 1024 * 1024)
-GLOBAL_UPLOAD_QUOTA = _env_bytes("CAIRN_GLOBAL_UPLOAD_QUOTA_BYTES", 2 * 1024 * 1024 * 1024)
+USER_UPLOAD_QUOTA = _env_bytes("NOIR_USER_UPLOAD_QUOTA_BYTES", 256 * 1024 * 1024)
+GLOBAL_UPLOAD_QUOTA = _env_bytes("NOIR_GLOBAL_UPLOAD_QUOTA_BYTES", 2 * 1024 * 1024 * 1024)
 UPLOAD_PENDING_SECS = 600   # V15: reserve expires if the file write never lands
 _QUOTA_GLOBAL = "*"         # sentinel user_quota row: instance-wide used_bytes
 TEXT_INLINE_MAX = 64 * 1024           # text files larger than this become tool pointers
@@ -257,7 +264,7 @@ TEXT_SUFFIX = {".txt", ".md", ".markdown", ".py", ".sh", ".bash", ".js", ".ts", 
 # Agora_export_2026-09-15.agora settings.json, key contextCompactPrompt,
 # 5520 chars, 2026-09-15). Ported verbatim on purpose — this is the prompt
 # that shapes Mara's continuity handoffs; paraphrasing it changes behavior.
-COMPACT_PROMPT = """You are CAIRN's conversation-state compactor for a continuing assistant-user relationship.
+COMPACT_PROMPT = """You are NOIR's conversation-state compactor for a continuing assistant-user relationship.
 
 Create a compact, accurate, standalone continuity handoff for the future instance of the same assistant. The handoff must let it continue the substantive conversation naturally, preserve the user's intent and preferences, and avoid pretending it knows or completed anything not supported by the transcript.
 
@@ -697,7 +704,7 @@ import zlib
 # U11 (0.7a): fresh-install static seed (found by the R3 clean-VM rehearsal,
 # K80 favicon report 2026-09-28). Login/chat/manifest link static/color.png;
 # a pristine install has an empty static dir, so beta boxes had no favicon
-# and a blank PWA tile. We embed ZERO blobs: the flat CAIRN emblem (same
+# and a blank PWA tile. We embed ZERO blobs: the flat NOIR emblem (same
 # geometry as the login-page SVG) is synthesized once with stdlib only, and
 # lands ONLY if the operator has no color.png of their own. agent.png stays
 # absent on purpose - the S4f10 avatar path already falls back to color.png.
@@ -826,7 +833,7 @@ def _tier_commit(path, text, note, who, pristine_src=None):
 
 def _f26_seed_tier_files():
     """F26 boot seed (main() only): write the lore-free Tier-1 base where a
-    principal has NO identity file yet. On CAIRN this is a complete no-op
+    principal has NO identity file yet. On NOIR this is a complete no-op
     (the file exists). Community lite instances get a personality at first
     boot instead of the bland fallback. Pristine is pinned byte-identical so
     Reset restores exactly what shipped (the pristine landmine, defused)."""
@@ -1158,7 +1165,7 @@ def init_db():
             if _add_col(db, "messages", "stopped", "INTEGER DEFAULT 0"):
                 log.info("DB migration: added messages.stopped")
         # One-time U42 migration: chronological turn blocks (K80 ruling
-        # 2026-10-08: CAIRN keeps every Agora feature). JSON list of blocks -
+        # 2026-10-08: NOIR keeps every Agora feature). JSON list of blocks -
         # {"k":"t"/"r","x":...} text/think, {"k":"x","i":n} tool_log index.
         # NULL = legacy shape; the renderer falls back to the old layout.
         if "blocks" not in cols:
@@ -1347,7 +1354,7 @@ form.addEventListener("submit", async (e) => {
 </script>
 <div id="f25w" style="display:none;background:#3a1d24;border:1px solid #ff3b5c;color:#ffd9e0;
 padding:10px 14px;border-radius:8px;margin:0 0 16px;font-size:13px;text-align:left">
-You are reaching CAIRN over plain HTTP from a non-localhost address. Session cookies cannot be marked Secure over plain HTTP, so your login WILL stick here and your session token travels in the clear - readable by anyone on the network path. Open http://localhost:8470 (default port) on the machine itself, or put CAIRN behind TLS you control (Cloudflare Tunnel, or Caddy with tls internal). This page keeps working over HTTP on purpose: first setup should never require trusting a stranger's certificate.
+You are reaching NOIR over plain HTTP from a non-localhost address. Session cookies cannot be marked Secure over plain HTTP, so your login WILL stick here and your session token travels in the clear - readable by anyone on the network path. Open http://localhost:8470 (default port) on the machine itself, or put NOIR behind TLS you control (Cloudflare Tunnel, or Caddy with tls internal). This page keeps working over HTTP on purpose: first setup should never require trusting a stranger's certificate.
 </div>
 <script>
 /* F25: insecure-transport disclosure. Browsers treat localhost as a secure context,
@@ -2943,7 +2950,7 @@ def web_ui_auth(mode):
 
 
 # --- User registry & sessions (P3.3 S1) ------------------------------------
-REGISTRY_PATH = Path(os.environ.get("CAIRN_REGISTRY", _default_registry_path()))
+REGISTRY_PATH = Path(os.environ.get("NOIR_REGISTRY", _default_registry_path()))
 PBKDF2_ITERS = 600000
 SESSION_MAX_AGE = 31536000  # P1-B: absolute session life 365d (idle kill below)
 SESSION_IDLE_MAX = 45 * 86400  # P1-B (K80 ruling 2026-09-22): 45 days idle = dead
@@ -3774,7 +3781,7 @@ def _safe_upload_name(name: str) -> str:
 
 
 def _safe_att_folder(v):
-    # patch34 (W2): sanitize a LOGICAL folder label for CAIRN Files. It is
+    # patch34 (W2): sanitize a LOGICAL folder label for NOIR Files. It is
     # never joined into a disk path (uploads stay flat per conv), so this
     # exists to keep the label traversal-free, consistent, and display-safe.
     # '' means root. A segment that reeks of traversal ('..') voids the lot.
@@ -3830,13 +3837,13 @@ def _classify_attachment(name: str, mime: str) -> str:
 # Agora-v4 archive = ZIP: manifest.json, conversations.json
 #   ({"conversations":[...],"runs":[...],"messages":[...],"tasks":[...],"loops":[...]}),
 #   settings.json, system_prompts.json, memories/, media/images/.
-# Cairn extensions (Agora's importer tolerates them - verified: the graph
+# Noir extensions (Agora's importer tolerates them - verified: the graph
 # parser does `else -> reader.skipValue()` and importJson uses
 # ignoreUnknownKeys=true):
 #   * conversations.json carries a 6th array "compactions"
 #   * media/files/ entries for non-image attachments
 #   * attachmentMeta items carry "cairn_entry" (the archive entry of the file)
-#   * settings.json holds the Cairn user's setting rows
+#   * settings.json holds the Noir user's setting rows
 # Write-only secrets (model_key_*/search_key_* rows) are NEVER exported.
 
 # ---------------------------------------------------------------------------
@@ -3865,7 +3872,7 @@ except BaseException as _vce:  # R10-12: a broken cffi/pyo3 raises PanicExceptio
 
 
 def _vault_saved_path():
-    # 0.7a ladder: optional single-line pointer file in BASE (CAIRN_HOME). A PATH is
+    # 0.7a ladder: optional single-line pointer file in BASE (NOIR_HOME). A PATH is
     # not a secret; the key bytes never live here and are never logged.
     try:
         p = (BASE / "vault-key-path.conf").read_text(encoding="utf-8").strip()
@@ -3904,7 +3911,7 @@ def _vault_key_candidates():
 _VAULT_KCV_PATH = STATE / "vault-kcv"
 _VAULT_KCV_NEG = {}
 def _vault_kcv(k):
-    return hmac.new(k, b"CAIRN-VAULT-KCV-v1", hashlib.sha256).hexdigest()[:32]
+    return hmac.new(k, b"NOIR-VAULT-KCV-v1", hashlib.sha256).hexdigest()[:32]
 def _vault_kcv_stored():
     try:
         v = _VAULT_KCV_PATH.read_text(encoding="utf-8").strip()
@@ -4160,7 +4167,7 @@ def _lockbox_gen_usb(h, u):
     except ValueError:
         under_base = False
     if real == base_real or under_base:
-        h._json(400, {"error": "the USB tier must live OUTSIDE the data directory - a copy inside CAIRN_HOME protects nothing the box-key did not already"})
+        h._json(400, {"error": "the USB tier must live OUTSIDE the data directory - a copy inside NOIR_HOME protects nothing the box-key did not already"})
         return
     try:
         same_dev = os.stat(real).st_dev == os.stat(base_real).st_dev
@@ -4287,7 +4294,7 @@ NC_APPPW_NAME = "nextcloud-apppw"
 NC_LIST_CAP = 200            # entries echoed per listing
 NC_READ_CAP = 200000         # bytes of file content echoed per read
 NC_TIMEOUT = 20              # seconds per DAV request
-NC_ALLOW_SUFFIX = os.environ.get("CAIRN_NC_ALLOW_SUFFIX", "")  # community build: set env to your Nextcloud domain suffix to enable
+NC_ALLOW_SUFFIX = os.environ.get("NOIR_NC_ALLOW_SUFFIX", "")  # community build: set env to your Nextcloud domain suffix to enable
 
 def vault_use(username, name, use_fn):
     """Decrypt a vault entry in-process, call use_fn(secret), return its
@@ -4335,7 +4342,7 @@ def _nc_vet_dial_ip(host, username=None):
     # allowed ANY https nc_url despite the error text claiming private-space.
     # Fixed forward: empty suffix now fails closed to RFC1918/loopback only.
     # 0.6u2 NC-FIX (Mara 2026-09-25): the suffix is the per-user setting
-    # "nc_allow_suffix" (the CAIRN_NC_ALLOW_SUFFIX env value is its default),
+    # "nc_allow_suffix" (the NOIR_NC_ALLOW_SUFFIX env value is its default),
     # the suffix match is dot-boundary exact (suffix example.com no longer
     # matches evilexample.com).
     suf = (get_setting("nc_allow_suffix", NC_ALLOW_SUFFIX, username) or "").strip().lower()
@@ -4579,7 +4586,7 @@ def execute_connector_tool(name, args, username):
 # One front-desk callback path (/oauth/callback): state routes the return to
 # the user who started it. New users never need new redirect URIs.
 # No provider-content caching: fetched mail/events/files flow to the model as
-# tool results only and are never written to the CAIRN DB.
+# tool results only and are never written to the NOIR DB.
 # ---------------------------------------------------------------------------
 import threading as _g_thr
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -4624,7 +4631,7 @@ def _google_client_secret(username):
         raise RuntimeError("Google client-secret vault entry could not be decrypted (wrong key or tampered blob)")
 def _google_redirect_uri():
     # App-level value: read from the daemon owner's settings (username=None reads
-    # never resolve user rows by design). Falls back to the CAIRN front desk.
+    # never resolve user rows by design). Falls back to the NOIR front desk.
     owner = globals().get("DAEMON_OWNER") or None
     # R11-C1: the .rstrip("/") used to live inside this comment, so a stored
     # trailing slash produced "//oauth/callback" and an unset base produced a
@@ -4703,7 +4710,7 @@ def google_oauth_callback(username, params):
         if not rt:
             return (
                 "Error: Google issued no refresh token. This happens on re-consent to an app you "
-                "already granted - revoke CAIRN at https://myaccount.google.com/permissions and "
+                "already granted - revoke NOIR at https://myaccount.google.com/permissions and "
                 "connect again. Nothing was stored.")
         _vault_seal(username, GOOGLE_REFRESH_NAME, "api_key", rt)
         _g_token_cache.pop(username, None)
@@ -4956,7 +4963,7 @@ def execute_goog_tool(name, args, username):
 # the /common tenant so personal AND work/school accounts both work (K80
 # ruling: both). Device flow is a PUBLIC-CLIENT flow: no client secret exists
 # and no redirect URI is needed - the one-time code is typed by the user at
-# microsoft.com/devicelogin. Headless-friendly: CAIRN never needs a browser.
+# microsoft.com/devicelogin. Headless-friendly: NOIR never needs a browser.
 # Credential layout: client_id = settings row ms_client_id (public identifier,
 # not secret); refresh token = vault entry ms-refresh (usable, never visible -
 # vault_use pattern, leak guard included). MS rotates refresh tokens; every
@@ -4964,7 +4971,7 @@ def execute_goog_tool(name, args, username):
 # Fallback note (canon): if a tenant's conditional access blocks device flow,
 # the auth-code fallback is a FUTURE slice, not built here.
 # No provider-content caching: fetched mail/events/files flow to the model as
-# tool results only and are never written to the CAIRN DB.
+# tool results only and are never written to the NOIR DB.
 # ---------------------------------------------------------------------------
 MS_AUTH_BASE = "https://login.microsoftonline.com"
 MS_GRAPH_BASE = "https://graph.microsoft.com"
@@ -5838,7 +5845,7 @@ def _ssh_run(username, args):
         return "Error: ssh_run port must be 1-65535"
     if not key_name:
         return ("Error: ssh_run needs key_name - the vault entry holding the private key"
-                " (see vault_list; seal keys with the CAIRN vault tooling, never in chat)")
+                " (see vault_list; seal keys with the NOIR vault tooling, never in chat)")
     timeout = _p1i_bint(args.get("timeout"), 5, CS_TIMEOUT_MAX, 60)  # P1-I/B02
     dest = (user + "@") if user else ""
     dest += host
@@ -6095,7 +6102,7 @@ def _p1i_file_mode_sweep():
 # its presence only ever bounced the wrong visitor. That is the round-9
 # "resident identity from a request header" smell. From P1-I:
 #   /etc/cairn/instance.conf -> "slug=<name>" (missing or unreadable = unset,
-#   which preserves today's single-owner CAIRN behavior exactly).
+#   which preserves today's single-owner NOIR behavior exactly).
 # When set, a header that disagrees with local truth is a LIE about which
 # instance this is: bounce it to its own door's login (which cannot serve it).
 # Full invite-to-instance/revocation lives in the 0.7 Residents slice; this is
@@ -6684,7 +6691,7 @@ def _p1i_cmd_says_secret(command, secret):
 # same way users decided in F12.5). ATTACHMENT mode is self-only: the file
 # must belong to a conversation the caller owns.
 # Transcripts/OCR text flow to the model as tool results only; nothing media
-# related is cached in the CAIRN DB. Temp conversions go to a Temporary-
+# related is cached in the NOIR DB. Temp conversions go to a Temporary-
 # Directory and are removed in finally.
 # ---------------------------------------------------------------------------
 import subprocess as _f14_sp
@@ -7827,7 +7834,7 @@ def _f18_api_delete(h):
 # ---------------------------------------------------------------------------
 # U46 (PATCH63, K80 blanket parity greenlight 2026-10-09): agents can manage
 # their OWN scheduled tasks. Agora ships create_task / list_tasks / delete_task
-# in its AutomationToolProvider; CAIRN had the F18 UI + REST but the agent
+# in its AutomationToolProvider; NOIR had the F18 UI + REST but the agent
 # could only reach them by curling itself. Same discipline as U45: the proven
 # F18 validation now lives in PURE CORES below (identical codes and messages —
 # REST handlers became thin adapters), and three agent tools ride those cores.
@@ -7963,11 +7970,11 @@ def _u46_task_tool(name, args, username):
         code, payload = _u46_post_core(u, {
             "name": args.get("name"), "cron": args.get("cron"),
             "prompt": args.get("prompt"), "enabled": args.get("enabled", 1)})
-        # schema honesty: CAIRN tasks run the owner's default model — an
+        # schema honesty: NOIR tasks run the owner's default model — an
         # Agora-shaped model override is accepted but noted, never pretended.
         if code < 400 and str(args.get("model") or "").strip():
             payload = dict(payload)
-            payload["note"] = "CAIRN tasks run the conversation owner's default model; the model override was not applied"
+            payload["note"] = "NOIR tasks run the conversation owner's default model; the model override was not applied"
     elif name == "list_tasks":
         code, payload = _u46_list_core(u)
     elif name == "delete_task":
@@ -7992,7 +7999,7 @@ def _u46_task_tool(name, args, username):
 # (read 2026-10-09): create refuses existing names; patch requires a
 # NON-EMPTY, UNIQUE old_string; rename refuses existing targets and a
 # same-name rename is a no-op; success strings are "Created X" / "Updated X"
-# / "Deleted X" / "No changes made.". CAIRN deviations, owned and documented
+# / "Deleted X" / "No changes made.". NOIR deviations, owned and documented
 # (not hidden): skill files carry NO separate description metadata - the
 # catalog line agents see is DERIVED from each file's first content line, so
 # create's "description" arg is accepted-and-noted (U46 model-param
@@ -8001,7 +8008,7 @@ def _u46_task_tool(name, args, username):
 # strings); Agora-only semantics get plain Agora-worded errors.
 _u47_json = _u46_json
 _u47_err = _u46_err
-U47_READ_MAX_NAMES = 10  # CAIRN context-budget habit: one read reads <= 10
+U47_READ_MAX_NAMES = 10  # NOIR context-budget habit: one read reads <= 10
 
 
 def _u47_list_core(u):
@@ -8128,7 +8135,7 @@ def _u47_user_gate(username):
 
 
 def _u47_desc(p):
-    """CAIRN's catalog line, DERIVED (no sidecar metadata): the first content
+    """NOIR's catalog line, DERIVED (no sidecar metadata): the first content
     line of the file, heading hashes off, 120 chars. Honest fallbacks beat
     invented summaries."""
     try:
@@ -8145,7 +8152,7 @@ def _u47_desc(p):
 def _u47_rename_core(u, old_name, new_name):
     """Agent-side rename (no REST counterpart - the UI never renamed skills).
     Agora rules: target must not exist (refuse, never clobber); same name is
-    a no-op. CAIRN adds what Agora can't: the bytes move THROUGH the save
+    a no-op. NOIR adds what Agora can't: the bytes move THROUGH the save
     core so the cap/total fences always bite, and the old file's SELECTION
     STATE travels with it (a disabled skill stays disabled after rename -
     renames must not smuggle a skill into the injected context)."""
@@ -8221,9 +8228,9 @@ def _u47_edit_tool(u, args, arg):
             return _u47_err(code, payload)
         return "No changes made." if payload.get("noop") else "Updated %s" % payload["renamed"]
     if op == "describe":
-        # Schema honesty (U46 model-param precedent): CAIRN stores no
+        # Schema honesty (U46 model-param precedent): NOIR stores no
         # description sidecar, so we say so instead of faking success.
-        return ("note: CAIRN skill files carry no separate description metadata "
+        return ("note: NOIR skill files carry no separate description metadata "
                 "and nothing was changed; the catalog line agents see is derived "
                 "from the file's first content line - use operation patch (or "
                 "replace) to edit that line itself.")
@@ -8288,7 +8295,7 @@ def _u47_skill_tool(name, args, username):
             return _u47_err(code, payload)
         out = "Created %s" % fname
         if arg("description").strip():
-            out += (" (note: CAIRN skill files carry no separate description "
+            out += (" (note: NOIR skill files carry no separate description "
                     "metadata; the catalog line is derived from the file's "
                     "first content line)")
         return out
@@ -9360,8 +9367,8 @@ def _f22_api_export(h):
               files_skipped=stats["files_skipped"], via="api")
     h.send_response(200)
     h.send_header("Content-Type", "application/octet-stream")
-    h.send_header("X-Cairn-Backup-Skipped", str(stats["files_skipped"]))
-    h.send_header("X-Cairn-Backup-Vault-Skipped", str(stats["vault_skipped"]))
+    h.send_header("X-Noir-Backup-Skipped", str(stats["files_skipped"]))
+    h.send_header("X-Noir-Backup-Vault-Skipped", str(stats["vault_skipped"]))
     h.send_header("Content-Disposition",
                   'attachment; filename="' + _cd_filename("cairn-backup-" + stamp + ".cbk.json") + '"')
     h.send_header("Content-Length", str(len(data)))
@@ -9925,7 +9932,7 @@ HELP_INDEX = [
     ("glossary",    "Glossary",               "the house vocabulary, in plain words"),
     ("tls",         "TLS & Certificates",       "proxy vs local CA vs your own cert: Caddy tls internal, certbot, acme.sh walkthroughs"),
     ("remote",      "Remote access & Firewall", "reaching the box from elsewhere: VPN first, firewall basics, the port-forward warning"),
-    ("v1",         "The v1 Door",              "letting another app talk to your Cairn like it is OpenAI: the token, the walkthrough, the fine print"),
+    ("v1",         "The v1 Door",              "letting another app talk to your Noir like it is OpenAI: the token, the walkthrough, the fine print"),
 ]
 _HELP_TITLE = {s: t for s, t, _ in HELP_INDEX}
 
@@ -10015,7 +10022,7 @@ HELP_BODIES = {
 <h2>The levels</h2>
 <dl>
 <dt>Level 1 - Local only <span class="tag">default, what runs today</span></dt>
-<dd>Conversations, settings and vault ciphertext live in this instance's database on CAIRN. The master key lives on the key server. Who can read your data: you, and whoever has root on those two machines. Full stop.</dd>
+<dd>Conversations, settings and vault ciphertext live in this instance's database on NOIR. The master key lives on the key server. Who can read your data: you, and whoever has root on those two machines. Full stop.</dd>
 <dt>Level 2 - Credentials + exports sync to Nextcloud <span class="tag plan">PLANNED - not shipped in this build</span></dt>
 <dd>Portable <b>copies</b>: vault ciphertext as CV1 files and export ZIPs appear in your Nextcloud. The master key never travels, so every copy is inert ciphertext. Filenames/entry names are visible unless wrapped.</dd>
 <dt>Level 3 - Full data replica <span class="tag plan">PLANNED - not shipped in this build</span></dt>
@@ -10024,21 +10031,21 @@ HELP_BODIES = {
 <h2>What syncing would TRULY mean (the disclaimer, verbatim from the design ruling)</h2>
 <div class="card warn">
 <ol>
-<li><i>Your data now lives where you put it.</i> CAIRN can't un-copy a copy. The people who can read your agent's memory become <b>everyone who can read your Nextcloud.</b> Self-hosted in-house, that's roughly who can already read CAIRN - fine, and this page says so. A hosted provider adds: their admins, their subpoena path, every device you sync, and every share-link you ever made.</li>
-<li><i>Delete softens.</i> On CAIRN, delete means gone. With sync, "gone" competes with Nextcloud's entire reason for existing: versions, trash, phone replicas, provider backups. <b>Choosing sync means your deletions are local promises, not universal ones</b> - unless E2EE + version purge policy is honestly configured.</li>
+<li><i>Your data now lives where you put it.</i> NOIR can't un-copy a copy. The people who can read your agent's memory become <b>everyone who can read your Nextcloud.</b> Self-hosted in-house, that's roughly who can already read NOIR - fine, and this page says so. A hosted provider adds: their admins, their subpoena path, every device you sync, and every share-link you ever made.</li>
+<li><i>Delete softens.</i> On NOIR, delete means gone. With sync, "gone" competes with Nextcloud's entire reason for existing: versions, trash, phone replicas, provider backups. <b>Choosing sync means your deletions are local promises, not universal ones</b> - unless E2EE + version purge policy is honestly configured.</li>
 <li><i>Credential copies are ciphertext-only</i> - filenames/entry names visible unless wrapped; the master key never leaves the key server; a stolen Nextcloud never yields plaintext. This part is actually strong, and this page says that too - honesty cuts both ways.</li>
-<li><i>A new principal appears.</i> Your Nextcloud admin becomes a data principal in CAIRN's threat model.</li>
+<li><i>A new principal appears.</i> Your Nextcloud admin becomes a data principal in NOIR's threat model.</li>
 </ol>
 </div>
 <h2>Why copies and not "truth" (the architecture position)</h2>
-<p>Even at Level 3, CAIRN's authoritative store stays local SQLite; Nextcloud holds <b>portable copies</b>, not the source of truth. Running the vault over remote storage would make the whole box <b>fail open</b>: no network to Nextcloud, no boot, no vault, no chat. Copies add zero confidentiality risk (already ciphertext) and zero availability cost, and they serve the real dream: <i>the box is disposable, my Nextcloud is me</i> - restore becomes a genuine recovery path without Nextcloud ever becoming a runtime dependency.</p>
+<p>Even at Level 3, NOIR's authoritative store stays local SQLite; Nextcloud holds <b>portable copies</b>, not the source of truth. Running the vault over remote storage would make the whole box <b>fail open</b>: no network to Nextcloud, no boot, no vault, no chat. Copies add zero confidentiality risk (already ciphertext) and zero availability cost, and they serve the real dream: <i>the box is disposable, my Nextcloud is me</i> - restore becomes a genuine recovery path without Nextcloud ever becoming a runtime dependency.</p>
 """,
 "limits": """
 <p>A privacy page that hides no doors is marketing. These are the doors that exist on this instance - all of them.</p>
 <h2>1. Your model provider sees your conversations</h2>
 <div class="card warn"><p>Chat messages, memory context and tool results are sent to <b>your configured model provider</b> (bring-your-own-key) to generate answers. That is what "the model answered" mechanically means. The provider's own retention and privacy policy applies to everything that passes through. This instance does not proxy that traffic through anyone else, and there is no zero-knowledge trick being claimed here: choose a provider you trust, or run a local model.</p></div>
 <h2>2. Root on the box</h2>
-<p>Conversations and settings live in a local SQLite file. Anyone with root on CAIRN can read them: you, and whoever roots CAIRN. Vault values are the protected exception (sealed, key on another machine). The OS journal also receives the daemon's boot/shutdown diagnostics - root's channel, and it was never yours to toggle.</p>
+<p>Conversations and settings live in a local SQLite file. Anyone with root on NOIR can read them: you, and whoever roots NOIR. Vault values are the protected exception (sealed, key on another machine). The OS journal also receives the daemon's boot/shutdown diagnostics - root's channel, and it was never yours to toggle.</p>
 <h2>3. Backups</h2>
 <p>Platform backups (hypervisor snapshots) capture the disk, which means conversations and ciphertext. They do not capture the master key (different machine). The honest framing: a backup tape is your data with the vault still locked, not with it empty.</p>
 <h2>4. Your own sessions</h2>
@@ -10052,13 +10059,13 @@ HELP_BODIES = {
 """,
 "glossary": """
 <dl>
-<dt>CAIRN</dt><dd>This VM: the box your agent instance runs on. Self-hosted, encrypted at rest where it matters.</dd>
+<dt>NOIR</dt><dd>This VM: the box your agent instance runs on. Self-hosted, encrypted at rest where it matters.</dd>
 <dt>Instance</dt><dd>Your agent - conversations, settings, vault, memory - isolated per account. Other accounts cannot see yours; that's enforced by construction, not by politeness.</dd>
 <dt>Door / slug</dt><dd>The web address an account signs in at. A door belongs to exactly one account; strangers get the landing page.</dd>
 <dt>Principal</dt><dd>Fancy word for "who an action is attributed to": a named account, or the owner/operator. Every stored thing and every tool call knows its principal.</dd>
 <dt>Tier</dt><dd>What a principal may command: <code>user</code> gets chat and their own settings; connector and credential-shell tools are owner/admin only.</dd>
 <dt>Vault</dt><dd>Sealed-encrypted credential storage. Write-only. See its own page.</dd>
-<dt>CV1</dt><dd>"Cairn Vault blob version 1" - the sealed-ciphertext format: AES-256-GCM, bound to owner and entry name.</dd>
+<dt>CV1</dt><dd>"Noir Vault blob version 1" - the sealed-ciphertext format: AES-256-GCM, bound to owner and entry name.</dd>
 <dt>Master key</dt><dd>The key that unseals vaults. Lives on another machine (the key server), handed to the daemon over memory-only storage at boot. Never on the disk that holds the ciphertext.</dd>
 <dt>Key server</dt><dd>The separate backup/key machine. Holds the vault master key and nightly backups; reachable on LAN only, by design.</dd>
 <dt>vault_use</dt><dd>The pattern where a connector decrypts a secret inside a function, uses it against the outside service, and never surfaces it into chat. The leak guard refuses results that contain the secret.</dd>
@@ -10073,13 +10080,13 @@ HELP_BODIES = {
 </dl>
 """,
 "v1": """
-<p>Your Cairn is not only a website you chat with. At the URL path <code>/v1</code> it also speaks <b>the same API dialect OpenAI invented</b> - so any phone or desktop app with a field labeled "custom OpenAI-compatible endpoint" (or similar) can point at your Cairn and chat through <b>your model, your provider key, your box</b>. That door is what the <b>v1 door token</b> locks.</p>
-<p>Start with the name, because it misleads everyone: <b>"v1" is not a version of anything here.</b> OpenAI's own API paths are literally <code>/v1/chat/completions</code>; Cairn copies that exact shape so client apps recognize it, and the name came along. The token is simply the password for that door.</p>
+<p>Your Noir is not only a website you chat with. At the URL path <code>/v1</code> it also speaks <b>the same API dialect OpenAI invented</b> - so any phone or desktop app with a field labeled "custom OpenAI-compatible endpoint" (or similar) can point at your Noir and chat through <b>your model, your provider key, your box</b>. That door is what the <b>v1 door token</b> locks.</p>
+<p>Start with the name, because it misleads everyone: <b>"v1" is not a version of anything here.</b> OpenAI's own API paths are literally <code>/v1/chat/completions</code>; Noir copies that exact shape so client apps recognize it, and the name came along. The token is simply the password for that door.</p>
 <h2>The three keys of the house</h2>
 <table><tr><th>Key</th><th>Who presents it</th><th>To what</th><th>Direction</th></tr>
-<tr><td><b>Provider API key</b></td><td>Your Cairn</td><td>Featherless / OpenAI / etc.</td><td><b>Outbound</b> - "let me use your models"</td></tr>
+<tr><td><b>Provider API key</b></td><td>Your Noir</td><td>Featherless / OpenAI / etc.</td><td><b>Outbound</b> - "let me use your models"</td></tr>
 <tr><td><b>Login password</b></td><td>You, a human</td><td>The web UI</td><td><b>Inbound</b> - "let me into my house"</td></tr>
-<tr><td><b>v1 door token</b></td><td>Some other app</td><td>The <code>/v1</code> door</td><td><b>Inbound</b> - "let me chat through your Cairn"</td></tr></table>
+<tr><td><b>v1 door token</b></td><td>Some other app</td><td>The <code>/v1</code> door</td><td><b>Inbound</b> - "let me chat through your Noir"</td></tr></table>
 <h2>What actually answers when an app knocks</h2>
 <ul>
 <li>The door is exactly one endpoint: <code>POST /v1/chat/completions</code>. It answers with <b>the owner's</b> configured model, provider key and context settings - always the owner's, whoever knocks.</li>
@@ -10091,7 +10098,7 @@ HELP_BODIES = {
 <ol>
 <li>Generate something long and random - a password manager works, or on the box: <code>openssl rand -hex 24</code> (48 characters). The floor is <b>32 printable characters</b>; anything shorter is refused with a plain "no".</li>
 <li>As the <b>owner</b>, open Settings &rarr; <b>Session card</b> &rarr; <b>v1 door token</b>. Paste, save. The field is write-only like every secret here: once set, the server never shows it again - only whether it is set.</li>
-<li>In the app: <b>base URL</b> = your Cairn's address with <code>/v1</code> on the end (direct on the LAN: <code>http://BOX:8470/v1</code>; through your front proxy: the address it serves, plus <code>/v1</code>). <b>API key</b> field = your token. If the app asks for a model name, type your saved model's name (or anything - see above).</li>
+<li>In the app: <b>base URL</b> = your Noir's address with <code>/v1</code> on the end (direct on the LAN: <code>http://BOX:8470/v1</code>; through your front proxy: the address it serves, plus <code>/v1</code>). <b>API key</b> field = your token. If the app asks for a model name, type your saved model's name (or anything - see above).</li>
 <li>Prove the wire from a terminal: <code>curl -s https://YOUR-CAIRN/v1/chat/completions -H "Authorization: Bearer YOUR-TOKEN" -H "Content-Type: application/json" -d '{"messages":[{"role":"user","content":"ping"}]}'</code> - JSON with an answer back means the door works end to end.</li>
 </ol>
 <h2>What the door says when it will not open</h2>
@@ -10102,7 +10109,7 @@ HELP_BODIES = {
 <tr><td><code>502</code></td><td>Your provider answered badly. The door worked; the upstream had a day.</td></tr></table>
 <h2>The fine print</h2>
 <div class="card warn">
-<p><b>The token is an owner-level pass.</b> Whatever holds it can make your Cairn answer - on your model account, spending your provider credits, as far as the door is concerned <i>as you</i>. Hand it only to apps that are standing in for you. Treat it like a password, because it is one.</p>
+<p><b>The token is an owner-level pass.</b> Whatever holds it can make your Noir answer - on your model account, spending your provider credits, as far as the door is concerned <i>as you</i>. Hand it only to apps that are standing in for you. Treat it like a password, because it is one.</p>
 <p><b>TLS first.</b> A token sent over plain HTTP is a postcard. Get the padlock sorted first - the <a href="help/tls">TLS</a> and <a href="help/remote">Remote access</a> pages cover exactly that.</p>
 <p><b>Rotation and closing.</b> Rotating = paste a new value and save. Saving <b>empty</b> shuts the token door: after that only the owner's own logged-in session passes. And only the <i>owner's</i> token governs - a token set by any other account is dead weight by design.</p>
 </div>
@@ -10205,14 +10212,14 @@ def _help_route(h):
             return
         h._html(200, _help_page("logs", "Instance Logs", _help_body_logs(u["username"]), u))
         return
-    if slug == "CAIRN-HELP.md":
+    if slug == "NOIR-HELP.md":
         # Single-file download of every static topic, generated live from the
         # same dictionaries this page renders - it cannot drift from the
         # build. Header hygiene: newlines stripped from filename and version
         # (response splitting), and NO build identity for anonymous visitors
         # (F19: /health keeps its version trimmed for the same reason).
         _f19v = "v" + VERSION if u else "release"
-        _f19fn = ("CAIRN-HELP-" + re.sub(r"[^A-Za-z0-9._-]", "", _f19v) + ".md")
+        _f19fn = ("NOIR-HELP-" + re.sub(r"[^A-Za-z0-9._-]", "", _f19v) + ".md")
         _f19md = _f19_help_md()
         if not u:
             # Claim parity (self-caught pre-boot round 2): the comment above,
@@ -10240,14 +10247,14 @@ def _help_route(h):
               'The <a href="help">Help Center index</a> has what does.</p>'))
 # HELP-END
 # ============================================================================
-# F19 BEGIN (first-boot setup wizard + CAIRN public help. K80 ruling
+# F19 BEGIN (first-boot setup wizard + NOIR public help. K80 ruling
 # 2026-09-23: lives IN the daemon, opens only while the registry holds zero
 # accounts, welded shut by the first account's existence - never by a flag.
 # Steps: mandatory AI-authority risk acceptance -> owner creation ->
 # model/key -> optional extras. The installer phase just opens this page.
 # Public help: the static Help Center pages are readable with no session
 # (they contain zero instance data); the per-user Instance Logs page stays
-# session-gated. CAIRN-HELP.md = single-file download of every static topic.)
+# session-gated. NOIR-HELP.md = single-file download of every static topic.)
 # ============================================================================
 import hashlib as _f19_hashlib  # F18 scar honored: this block owns its imports
 import json as _f19_json
@@ -10543,7 +10550,7 @@ chmod 600 /run/cairn-vault.key</pre>
 <p>Everything except vault-backed secrets keeps working; those return 503 with a pointer back to the lockbox page. Nothing is lost by waiting. See also <a href="vault">The Vault</a> and the Hardening checklist - an off-box key is the single biggest upgrade to the whole design.</p>
 """
 def _f19_help_md():
-    # Single-file CAIRN-HELP.md, generated live from the same topic bodies the
+    # Single-file NOIR-HELP.md, generated live from the same topic bodies the
     # Help Center serves, so the download can never drift from the running
     # build. Bodies are authored HTML-lite; markdown readers render it fine.
     # The per-user Instance Logs page is intentionally absent: it is data,
@@ -10623,7 +10630,7 @@ input[type=checkbox]:focus-visible,input[type=radio]:focus-visible,button:focus-
   <p style="margin-top:0"><b>Read this before you create anything.</b> This is not a terms-of-service formality; it is an operations briefing.</p>
 <div id="f25w" style="display:none;background:#3a1d24;border:1px solid #ff3b5c;color:#ffd9e0;
 padding:10px 14px;border-radius:8px;margin:0 0 16px;font-size:13px;text-align:left">
-You are reaching CAIRN over plain HTTP from a non-localhost address. Session cookies cannot be marked Secure over plain HTTP, so your login WILL stick here and your session token travels in the clear - readable by anyone on the network path. Open http://localhost:8470 (default port) on the machine itself, or put CAIRN behind TLS you control (Cloudflare Tunnel, or Caddy with tls internal). This page keeps working over HTTP on purpose: first setup should never require trusting a stranger's certificate.
+You are reaching NOIR over plain HTTP from a non-localhost address. Session cookies cannot be marked Secure over plain HTTP, so your login WILL stick here and your session token travels in the clear - readable by anyone on the network path. Open http://localhost:8470 (default port) on the machine itself, or put NOIR behind TLS you control (Cloudflare Tunnel, or Caddy with tls internal). This page keeps working over HTTP on purpose: first setup should never require trusting a stranger's certificate.
 </div>
 <script>
 /* F25: insecure-transport disclosure. Browsers treat localhost as a secure context,
@@ -10880,7 +10887,7 @@ $("ver").textContent=document.documentElement.getAttribute("data-v")||"";
 
 
 
-CAIRN_EXPORT_VERSION = 4
+NOIR_EXPORT_VERSION = 4
 # P1-I/S04 (round-9): these two are EXACT names, not prefixes - the manifest
 # tells the truth now: no live credential leaves in a plain .cairn archive.
 EXPORT_SECRET_PREFIXES = ("model_key_", "search_key_")
@@ -11126,7 +11133,7 @@ def _build_cairn_export(username):
         if _my_md is not None and _my_md.exists():
             _r7_scan(_my_md, username)
     stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now)) + ".000000Z"
-    fname = "Cairn_export_%s.cairn" % time.strftime("%Y-%m-%d", time.gmtime(now))
+    fname = "Noir_export_%s.cairn" % time.strftime("%Y-%m-%d", time.gmtime(now))
     # V20/T-B21 (0.6x): the temp is created O_WRONLY|O_CREAT|O_EXCL at 0600
     # BEFORE a single byte is written. The archive carries every conversation,
     # memory file and non-secret setting of this account: under the old
@@ -11210,7 +11217,7 @@ def _build_cairn_export(username):
                 # PATCH38/U23: Agora run-relative semantics. A user row opens
                 # a run, so it must carry runSequence 0; otherwise the importer
                 # fidelity skip (role==user and seq>0 and no media) discards
-                # genuine CAIRN user turns on a .cairn round-trip.
+                # genuine NOIR user turns on a .cairn round-trip.
                 "runId": run_id,
                 "runSequence": 0 if m["role"] == "user" else seq,
                 "consumedAtPass": None,
@@ -11225,7 +11232,7 @@ def _build_cairn_export(username):
                  "],\"tasks\":[],\"loops\":[]"
                  ",\"compactions\":[" + ",".join(json.dumps(o, ensure_ascii=False) for o in comp_objs) + "]}")
     sp_id = str(uuid.uuid5(uuid.NAMESPACE_URL, "cairn-sp:" + INSTANCE_SLUG))
-    sp_entry = {"id": sp_id, "title": "Cairn " + INSTANCE_SLUG,
+    sp_entry = {"id": sp_id, "title": "Noir " + INSTANCE_SLUG,
                 "systemItems": [{"id": "cairn-main", "type": "CUSTOM", "value": sp_text}],
                 "userItems": [], "assistantItems": []}
     # PATCH49/U32 (K80 bench #4): the prompts table is now the source of
@@ -11250,7 +11257,7 @@ def _build_cairn_export(username):
         sp_list = [sp_entry]
     with os.fdopen(_tmp_fd, "wb") as _tmp_fh, zipfile.ZipFile(_tmp_fh, "w", zipfile.ZIP_DEFLATED) as z:
         z.writestr("manifest.json", json.dumps({
-            "agora_export_version": CAIRN_EXPORT_VERSION,
+            "agora_export_version": NOIR_EXPORT_VERSION,
             "app_version": "C.A.I.R.N. v" + VERSION,
             "exported_at": stamp,
             "categories": ["conversations", "memories", "system_prompts", "settings"],
@@ -11279,7 +11286,7 @@ def _build_cairn_export(username):
 
 _AGORA_Btypes = ("tool", "thought", "answer", "error", "transcription")
 def _agora_fidelity(m, role):
-    # U20 (patch29): translate one Agora v4 message into CAIRN-native parts.
+    # U20 (patch29): translate one Agora v4 message into NOIR-native parts.
     # Returns (skip_row, tool_calls_json, reasoning, extra_text).
     # - skip_row: USER rows with runSequence>0 are agent-loop machinery
     #   (tool stuffing / result echoes), NOT human turns - UNLESS the row
@@ -11287,8 +11294,8 @@ def _agora_fidelity(m, role):
     #   real 634MB export: 2,385 seq0 USER rows (zero JSON), 19,306 seq>0
     #   (17,821 JSON + 1,485 echoes like "Appended to active memory.").
     # - tool_calls: Agora blocks {type:tool, toolName, toolArgs, toolResult,
-    #   toolProgress} -> CAIRN client chips {name, arguments, result, s};
-    #   s = thinking-session index (patch16 cards). CAIRN-exported archives
+    #   toolProgress} -> NOIR client chips {name, arguments, result, s};
+    #   s = thinking-session index (patch16 cards). NOIR-exported archives
     #   already hold chip shape -> pass through UNCHANGED (round-trip safe).
     # - reasoning: Agora thought blocks -> patch16 _rsep-joined timeline.
     # - extra: error/transcription blocks fold into visible, FTS-searchable text.
@@ -11336,7 +11343,7 @@ def _agora_fidelity(m, role):
 # - chats/memory/settings were native already; what the door could NOT carry
 #   was skills (skill_db/ walked past the memory_db-only loop), the prompts
 #   library (only sps[0] ever landed — and sps[0] is NOT the active prompt in
-#   a real export), Agora-NAMED settings (the safe-allowlist compares CAIRN
+#   a real export), Agora-NAMED settings (the safe-allowlist compares NOIR
 #   names, so an .agora settings.json matched nothing), and api_keys.json
 #   (locked out by the S4f7 contract).
 # - Secrets ride their OWN flag, principal-only, sealed with the box's own
@@ -11484,9 +11491,9 @@ def _imp21_identity_extras(zf, username, stats):
     stats["u21"] = st
 def _imp21_settings_translate(zf, username, stats):
     """restore branch: Agora-NAMED settings keys translated into the allowlist.
-    (The native settings restore compares raw archive keys against CAIRN names,
+    (The native settings restore compares raw archive keys against NOIR names,
     so a real .agora settings.json matched nothing before U21.) Keep-existing:
-    a translated key that CAIRN already holds is never overwritten; the live
+    a translated key that NOIR already holds is never overwritten; the live
     value wins and the archive value ships in the report (truncated)."""
     st = []
     try:
@@ -11501,7 +11508,7 @@ def _imp21_settings_translate(zf, username, stats):
             return
         changed = []
         for ak, (ck, tx) in _IMP21_S_MAP.items():
-            if ak not in s2 or s2[ak] is None or ck not in _CAIRN_SAFE_SETTINGS:
+            if ak not in s2 or s2[ak] is None or ck not in _NOIR_SAFE_SETTINGS:
                 continue
             raw = s2[ak]
             try:
@@ -11614,12 +11621,12 @@ def _imp21_secrets(zf, username, stats):
         st["api_keys"] = "error-see-log"
 
 # PATCH40/U24: run-order restamp. Agora merged answer rows carry the turn's
-# START timestamp; per-tool card rows carry later ones. CAIRN has no run
+# START timestamp; per-tool card rows carry later ones. NOIR has no run
 # column and renders ORDER BY ts, so imported merged answers landed ABOVE
 # their own cards. This restamps merged rows (assistant, tool_calls set,
 # non-empty text) to just after the last STRUCTURAL row (user row or pure
 # card row) of their turn -- turn boundaries are user rows, row order is the
-# import's ts-sorted insert order. CAIRN-native single-row turns never
+# import's ts-sorted insert order. NOIR-native single-row turns never
 # qualify (their own ts is the structural max, so `ts < maxts` is false) and
 # re-runs are no-ops. Companion standalone: /root/ops-backup/p40-restamp.py
 _P40_SQL = (
@@ -11948,7 +11955,7 @@ def _import_cairn_archive(zf, username, restore, restore_identity=False, import_
                 log.exception("import: system prompt restore failed")
     if restore:
         # P1-D/B2: settings restore keeps its own flag (safe keys only -
-        # _CAIRN_SAFE_SETTINGS). No longer coupled to identity writes.
+        # _NOIR_SAFE_SETTINGS). No longer coupled to identity writes.
         if "settings.json" in names:
             try:
                 s2 = json.loads(zf.read("settings.json"))
@@ -11960,7 +11967,7 @@ def _import_cairn_archive(zf, username, restore, restore_identity=False, import_
                         # rule - "everything not secret-prefixed" - let an
                         # imported archive rewrite v1_token or repoint
                         # model_custom. Restore may touch known-safe keys only.
-                        if str(k3) not in _CAIRN_SAFE_SETTINGS:
+                        if str(k3) not in _NOIR_SAFE_SETTINGS:
                             continue
                         set_setting(str(k3), v2 if isinstance(v2, str) else json.dumps(v2), username)
                         _changed_keys.append(str(k3))
@@ -12156,7 +12163,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "execute_shell",
-            "description": "Execute a shell command on CAIRN (Linux, Pi 4B). Returns stdout/stderr. Set background=true for a durable detached job that survives the turn and even a daemon restart - it returns a job id to check with get_shell_job/wait_for_job.",
+            "description": "Execute a shell command on NOIR (Linux, Pi 4B). Returns stdout/stderr. Set background=true for a durable detached job that survives the turn and even a daemon restart - it returns a job id to check with get_shell_job/wait_for_job.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -12173,7 +12180,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "read_file",
-            "description": "Read a file from CAIRN's filesystem. Returns content (max 1MB).",
+            "description": "Read a file from NOIR's filesystem. Returns content (max 1MB).",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -12189,7 +12196,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "write_file",
-            "description": "Write content to a file on CAIRN. Creates directories if needed.",
+            "description": "Write content to a file on NOIR. Creates directories if needed.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -12226,7 +12233,7 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string", "description": "Glob pattern (e.g. '*.py')"},
-                    "path": {"type": "string", "description": "Base directory (default: the CAIRN data dir)"},
+                    "path": {"type": "string", "description": "Base directory (default: the NOIR data dir)"},
                     "depth": {"type": "integer", "description": "Max directory levels below path: 1 = base only, higher recurses, 0 = unlimited (default 0)."}
                 },
                 "required": ["pattern"]
@@ -12242,7 +12249,7 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "pattern": {"type": "string", "description": "Regex pattern"},
-                    "path": {"type": "string", "description": "File or directory to search (default: the CAIRN data dir/mara)"},
+                    "path": {"type": "string", "description": "File or directory to search (default: the NOIR data dir/mara)"},
                     "glob": {"type": "string", "description": "Filter files by glob pattern (optional, e.g. '*.py')."}
                 },
                 "required": ["pattern"]
@@ -12253,7 +12260,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "list_shell_jobs",
-            "description": "List your durable background shell jobs on this CAIRN host.",
+            "description": "List your durable background shell jobs on this NOIR host.",
             "parameters": {"type": "object", "properties": {}}
         }
     },
@@ -13030,9 +13037,9 @@ def _mem_layer_bytes(d, exclude=None):
 def _tool_memory(args: dict, username=None, conv_id=None) -> str:
     """S4f5 + R7a: the agent's own memory files, NAMESPACED PER PRINCIPAL.
     list | read | append | create | replace | prepend | patch | rename |
-    describe | delete (U50, Agora MemoryToolProvider parity - CAIRN keeps its
+    describe | delete (U50, Agora MemoryToolProvider parity - NOIR keeps its
     proven single-tool dispatch instead of Agora's six definitions; the
-    operations are Agora's, the fences are CAIRN's). Every action is scoped
+    operations are Agora's, the fences are NOIR's). Every action is scoped
     to that principal's
     directory - a resident's Mara can neither read nor write the owner's
     memory, and the owner's Mara cannot reach into a resident's."""
@@ -13124,7 +13131,7 @@ def _tool_memory(args: dict, username=None, conv_id=None) -> str:
                     "your system prompt.%s" % (len(content), name, size, _memory_warn(size)))
     # U50 (Agora MemoryToolProvider parity): the full edit plane. Agora's
     # agent got create/edit(replace|patch|rename|describe)/delete from day
-    # one; CAIRN's had APPEND ONLY - the cap-error text told it to "trim what
+    # one; NOIR's had APPEND ONLY - the cap-error text told it to "trim what
     # no longer matters" with no way to obey. Same fences as append:
     # _MEMORY_LOCK, per-file cap, per-principal total cap, 0600, mkdir 0700,
     # reload_identity, consequence warning. PATCH REQUIRES A UNIQUE MATCH
@@ -13500,7 +13507,7 @@ RECALL_DEFAULT_LIMIT = 8
 RECALL_MAX_LIMIT = 20
 # U51 (patch68): Agora RagToolProvider parity - browse caps mirror the
 # schema (list 1-50 default 20, read 1-100 default 50). The char ceilings
-# are CAIRN house style (Agora returns raw text; we protect the context
+# are NOIR house style (Agora returns raw text; we protect the context
 # window): 4000 chars per message, 24000 chars per page.
 LISTCONV_DEFAULT_LIMIT = 20
 LISTCONV_MAX_LIMIT = 50
@@ -13732,7 +13739,7 @@ def _tool_recall(args: dict, username=None, conv_id=None) -> str:
 
 # ---------------------------------------------------------------------------
 # U51 (patch68): CONVERSATION BROWSING PARITY (Agora RagToolProvider).
-# recall = search; these two close the drill-down gap Agora has and CAIRN
+# recall = search; these two close the drill-down gap Agora has and NOIR
 # lacked: list_conversations (paged browse, newest-first) and
 # read_conversation (paged linear transcript, user/assistant only).
 # Rulings, plainly:
@@ -13745,10 +13752,10 @@ def _tool_recall(args: dict, username=None, conv_id=None) -> str:
 #      its lines now carry "id=<conv id>" so search -> read chains exactly
 #      like Agora's windowed search. Window expansion itself is the owned
 #      deviation: the chain returns the same data in one extra turn.
-#  (3) Everything CAIRN-capped: per-message and per-page char ceilings
+#  (3) Everything NOIR-capped: per-message and per-page char ceilings
 #      protect the context window; Agora returns raw text. Owned deviation.
-#  (4) Ordering is (ts, rowid) - CAIRN conversations are linear; Agora's
-#      branch-topology walk has no CAIRN analog and was NOT reimplemented.
+#  (4) Ordering is (ts, rowid) - NOIR conversations are linear; Agora's
+#      branch-topology walk has no NOIR analog and was NOT reimplemented.
 # ---------------------------------------------------------------------------
 def _page_offset(raw):
     try:
@@ -13841,7 +13848,7 @@ def _tool_read_conversation(args: dict, username=None) -> str:
 # the stdio transport (newline-delimited JSON-RPC 2.0), npx/uvx style.
 # K80 GO 2026-10-05: per-user server definitions, owner/admin gated.
 #
-# Trust story, plainly: an MCP server is a program this box RUNS with CAIRN's
+# Trust story, plainly: an MCP server is a program this box RUNS with NOIR's
 # own permissions. Defining one is a deliberate act, fenced twice on purpose
 # - the settings save checks the role and _mcp_servers_for() re-checks it on
 # every call (the F17 media-tool double-check pattern). Share principals
@@ -14372,9 +14379,9 @@ def _tool_grep(args: dict) -> str:
 
 # ---------------------------------------------------------------------------
 # U52 (patch69): DURABLE SHELL JOBS (Agora ShellToolProvider cluster parity).
-# CAIRN's execute_shell was foreground-only, killed at <=120s - the agent
+# NOIR's execute_shell was foreground-only, killed at <=120s - the agent
 # could not start anything that outlives a turn. Agora's answer is durable
-# Conch jobs; CAIRN's analog is the same philosophy on one host: launch via
+# Conch jobs; NOIR's analog is the same philosophy on one host: launch via
 # start_new_session (the F20 house idiom), stdout/err to state/shell-jobs,
 # meta.json on disk. Jobs survive the turn, the session, AND a daemon
 # restart (the process is its own session leader; a job orphaned by a daemon
@@ -14382,7 +14389,7 @@ def _tool_grep(args: dict) -> str:
 # Rulings, plainly:
 #  (1) Tool names are Agora's EXACT (list_shell_jobs, get_shell_job,
 #      wait_for_job, stop_shell_job) MINUS the per-device "server" param -
-#      CAIRN is one host. Owned deviation.
+#      NOIR is one host. Owned deviation.
 #  (2) FOREGROUND TIMEOUT STILL KILLS (subprocess.run semantics unchanged,
 #      P1-I/B02 intact). Agora's durable-foreground ("never killed") would
 #      orphan processes with no reaper on this box. background=true is the
@@ -14706,7 +14713,7 @@ MODEL_KEY_PROVIDERS = tuple(p[0] for p in MODEL_PROVIDERS)  # every provider nee
 # 64-char ids on a phone. Stored as ONE JSON row in the per-user
 # settings table: [{"provider": "<id>", "model": "<id>", "label": "..."}]
 # Model ids and provider ids are not secret. Deliberately NOT on
-# _CAIRN_SAFE_SETTINGS yet: a .cairn import carrying someone else's
+# _NOIR_SAFE_SETTINGS yet: a .cairn import carrying someone else's
 # shortcut list is harmless but pointless until K80 rules she wants
 # shortcuts to travel between boxes.
 _SAVED_MODELS_MAX = 40
@@ -15120,7 +15127,7 @@ def _f17_post_opener():
 # public client ids, connector URLs. Everything secret-shaped or daemon-
 # privileged is simply NOT on this list: model_key_*, search_key_*,
 # model_key_media, v1_token, oauth_redirect_base, opnsense_key.
-_CAIRN_SAFE_SETTINGS = frozenset({
+_NOIR_SAFE_SETTINGS = frozenset({
     "active_prompt",
     "audiogen_mode", "audiogen_model", "audiogen_voice",
     "embed_model", "conv_search", "conv_sim_min",
@@ -15352,7 +15359,7 @@ def model_headers(cfg):
 
 # ── B-24 (K80 ask 2026-09-27): full provider catalog, searched server-side ──
 # Providers like Featherless list ~22,000 model ids. The old handler shipped
-# the first 200 and called it a day; now CAIRN caches the FULL id list per
+# the first 200 and called it a day; now NOIR caches the FULL id list per
 # user+provider+key and /api/models answers either the first page (no q - the
 # old contract) or the top matches of a type-to-find query (?q=, optionally
 # ?provider= to search another configured provider's catalog). Keys never
@@ -15604,7 +15611,7 @@ def anthropic_chunk_to_sse(chunk):
 # the old _DDGParser/_tool_web_search/_TextExtractor/_tool_web_fetch region).
 #
 # Design rules (K80-approved spec, 2026-09-16):
-#   * Prefilled providers probe-verified from CAIRN today (fake key -> clean
+#   * Prefilled providers probe-verified from NOIR today (fake key -> clean
 #     auth error, zero 404s): Brave 422, Serper 403, Tavily 401.
 #     Kagi (404 at probed path) and SearXNG (bot challenge) are deliberately
 #     ABSENT — reachable via the custom config if K80 insists.
@@ -15616,7 +15623,7 @@ def anthropic_chunk_to_sse(chunk):
 #     refused; DNS resolved once and the connect is PINNED to that IP; EVERY
 #     redirect hop re-validated (rebinding bypass). http/https only.
 #   * Shape change -> explicit error, never garbage (house pattern).
-#   * Errors are CAIRN-voiced: honest fact first, brand quirk second, always
+#   * Errors are NOIR-voiced: honest fact first, brand quirk second, always
 #     actionable. The agent conveys them in its own voice.
 #
 # Stdlib only. Imports stay local (house style — the daemon already imports
@@ -15646,7 +15653,7 @@ SEARCH_PROVIDER_IDS = tuple(p[0] for p in SEARCH_PROVIDERS)
 
 
 class WebError(Exception):
-    """Bounded, CAIRN-voiced web error. .msg is safe to hand to the model."""
+    """Bounded, NOIR-voiced web error. .msg is safe to hand to the model."""
 
     def __init__(self, msg):
         super().__init__(msg)
@@ -15671,7 +15678,7 @@ def _ssrf_block(ip_str):
     if ip.is_reserved:
         return "reserved"
     if not ip.is_global:
-        # P1-A/M1 (audit 2026-09-22, proven on CAIRN's own Python 3.13.5):
+        # P1-A/M1 (audit 2026-09-22, proven on NOIR's own Python 3.13.5):
         # CGNAT 100.64/10 - the Tailscale range - is NOT is_private here.
         # is_global is the honest umbrella for everything unroutable.
         return "non-global"
@@ -15689,13 +15696,13 @@ def _validate_and_pin(url):
     if not host:
         raise WebError("No host in that URL.")
     if host.lower() == "localhost":
-        raise WebError("That address lives inside the house. CAIRN's doors do not open "
+        raise WebError("That address lives inside the house. NOIR's doors do not open "
                        "for web tools — try a public URL.")
     port = u.port or (443 if u.scheme == "https" else 80)
     try:
         infos = socket.getaddrinfo(host, port, proto=socket.IPPROTO_TCP)
     except socket.gaierror:
-        raise WebError("Could not reach the web — %s does not resolve. CAIRN is a closed "
+        raise WebError("Could not reach the web — %s does not resolve. NOIR is a closed "
                        "network by design; today even the outside world is having a day. "
                        "Check the URL or try again." % host)
     if not infos:
@@ -15705,7 +15712,7 @@ def _validate_and_pin(url):
     for _f, _t, _p, _c, sa in infos:
         why = _ssrf_block(sa[0])
         if why:
-            raise WebError("That address points inside the house (%s -> %s, %s). CAIRN's "
+            raise WebError("That address points inside the house (%s -> %s, %s). NOIR's "
                            "doors do not open for web tools — try a public URL." % (host, sa[0], why))
     return host, port, infos[0][4][0]
 
@@ -16124,7 +16131,7 @@ def _tool_web_search(args: dict, username=None) -> str:
     lines = []
     if tavily_answer:
         # U53/PATCH70: Agora parity — Tavily answer above the list.
-        # 1200-char cap = CAIRN budget guard (owned; Agora does not cap).
+        # 1200-char cap = NOIR budget guard (owned; Agora does not cap).
         lines.append("Answer: %s\n" % tavily_answer[:1200])
     for i, r in enumerate(results, 1):
         lines.append("%d. %s\n   URL: %s\n   %s" % (i, r["title"], r["url"], r["snippet"]))
@@ -17538,7 +17545,7 @@ function addAssistantMsg(text, cont) {  // U42: cont = follow-on block in the sa
   det.className = 'thoughts';
   const sLogo = document.createElement('span');
   sLogo.className = 'tlogo';
-  sLogo.innerHTML = CAIRN_EMBLEM_SVG;
+  sLogo.innerHTML = NOIR_EMBLEM_SVG;
   const ttl = document.createElement('span');
   ttl.className = 'tlabel';
   ttl.textContent = 'Thinking';
@@ -17821,7 +17828,7 @@ function addThinking() {
   el.className = 'thinking';
   const dots = document.createElement('span');
   dots.className = 'tlogo';
-  dots.innerHTML = CAIRN_EMBLEM_SVG;
+  dots.innerHTML = NOIR_EMBLEM_SVG;
   const lab = document.createElement('span');
   lab.className = 'tlabel';
   lab.textContent = 'waking up…';
@@ -18018,7 +18025,7 @@ const TOOL_FILE = ['read_file', 'write_file', 'edit_file', 'grep_files', 'glob_f
 const TOOL_CONN = ['google_connect', 'ms_connect', 'github_connect', 'ha_connect', 'opnsense_connect'];
 const TOOL_CONN_PREFIX = ['gmail_', 'google_', 'calendar_', 'drive_', 'outlook_', 'ms_', 'onedrive_', 'github_', 'ha_', 'opnsense_', 'nextcloud_'];
 const TOOL_GLYPH = { shell: '⚙', file: '📄', connector: '🔌', memory: '🧠', vault: '🔒', tool: '🧰' };
-const CAIRN_EMBLEM_SVG = '<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5"><g opacity="0.95"><ellipse cx="50" cy="50" rx="36" ry="13"/><ellipse cx="50" cy="50" rx="36" ry="13" transform="rotate(72 50 50)"/><ellipse cx="50" cy="50" rx="36" ry="13" transform="rotate(144 50 50)"/><ellipse cx="50" cy="50" rx="36" ry="13" transform="rotate(216 50 50)"/><ellipse cx="50" cy="50" rx="36" ry="13" transform="rotate(288 50 50)"/><circle cx="50" cy="50" r="11"/><circle cx="50" cy="50" r="4" fill="currentColor" stroke="none"/></g></svg>';
+const NOIR_EMBLEM_SVG = '<svg viewBox="0 0 100 100" fill="none" stroke="currentColor" stroke-width="5"><g opacity="0.95"><ellipse cx="50" cy="50" rx="36" ry="13"/><ellipse cx="50" cy="50" rx="36" ry="13" transform="rotate(72 50 50)"/><ellipse cx="50" cy="50" rx="36" ry="13" transform="rotate(144 50 50)"/><ellipse cx="50" cy="50" rx="36" ry="13" transform="rotate(216 50 50)"/><ellipse cx="50" cy="50" rx="36" ry="13" transform="rotate(288 50 50)"/><circle cx="50" cy="50" r="11"/><circle cx="50" cy="50" r="4" fill="currentColor" stroke="none"/></g></svg>';
 function toolKind(n) {
   const k = String(n || '');
   if (k === 'execute_shell' || k === 'ssh_run' || k === 'run_with_secret') return 'shell';
@@ -18052,7 +18059,7 @@ function mkThinkCard() {
   wrap.className = 'thinkcard';
   const lg = document.createElement('span');
   lg.className = 'tlogo';
-  lg.innerHTML = CAIRN_EMBLEM_SVG;
+  lg.innerHTML = NOIR_EMBLEM_SVG;
   const ttl = document.createElement('span');
   ttl.className = 'tcname';
   ttl.textContent = 'Thinking';
@@ -18395,7 +18402,7 @@ $('mpCam').addEventListener('click', function () { pickMedia('camera'); });
 $('mpPhotos').addEventListener('click', function () { pickMedia('photos'); });
 $('mpVideos').addEventListener('click', function () { pickMedia('videos'); });
 $('mpFiles').addEventListener('click', function () { pickMedia('files'); });
-/* ── patch34 (K80 W2 2026-10-06): CAIRN Files ────────────────────────────
+/* ── patch34 (K80 W2 2026-10-06): NOIR Files ────────────────────────────
    "Chat files" opens a per-chat file drawer rooted in THIS chat's upload
    space. Bytes upload through the EXISTING api/upload lane (with a logical
    folder label); mkdir/rmdir/delete ride api/cairnfiles. Tapping a file
@@ -18754,7 +18761,7 @@ var host = (location.hostname || "").toLowerCase();
   if (document.getElementById("f25w")) return;
   var d = document.createElement("div"); d.id = "f25w";
   d.style.cssText = "background:#3a1d24;border:1px solid #ff3b5c;color:#ffd9e0;padding:10px 14px;border-radius:8px;margin:8px 12px;font-size:13px;text-align:left";
-  d.innerHTML = "You are reaching CAIRN over plain HTTP from a non-localhost address. Session cookies cannot be marked Secure over plain HTTP, so your login WILL stick here and your session token travels in the clear - readable by anyone on the network path. Open http://localhost:8470 (default port) on the machine itself, or put CAIRN behind TLS you control (Cloudflare Tunnel, or Caddy with tls internal). This page keeps working over HTTP on purpose: first setup should never require trusting a stranger's certificate.";
+  d.innerHTML = "You are reaching NOIR over plain HTTP from a non-localhost address. Session cookies cannot be marked Secure over plain HTTP, so your login WILL stick here and your session token travels in the clear - readable by anyone on the network path. Open http://localhost:8470 (default port) on the machine itself, or put NOIR behind TLS you control (Cloudflare Tunnel, or Caddy with tls internal). This page keeps working over HTTP on purpose: first setup should never require trusting a stranger's certificate.";
   document.body.insertBefore(d, document.body.firstChild);
 } catch (e) {} }
 if (document.body) f25show(); else document.addEventListener("DOMContentLoaded", f25show); })();
@@ -19862,7 +19869,7 @@ body[data-page="personal"] .card:not([data-sec="personal"]),body[data-page="admi
 
 <div class="card" id="mcpCard" data-sec="admin">
   <h2>MCP Servers</h2>
-  <div class="hint">Model Context Protocol servers over stdio (npx / uvx style). One JSON array: <b>[{"name":"files","command":"npx","args":["-y","some-mcp-server"],"env":{"KEY":"..."}}]</b> - server names are a-z 0-9 _ - (no double underscore), max 8 servers. Their tools appear to the agent automatically as mcp__servername__toolname. <b>Every server runs ON THIS BOX with CAIRN's own permissions - only define servers you trust.</b></div>
+  <div class="hint">Model Context Protocol servers over stdio (npx / uvx style). One JSON array: <b>[{"name":"files","command":"npx","args":["-y","some-mcp-server"],"env":{"KEY":"..."}}]</b> - server names are a-z 0-9 _ - (no double underscore), max 8 servers. Their tools appear to the agent automatically as mcp__servername__toolname. <b>Every server runs ON THIS BOX with NOIR's own permissions - only define servers you trust.</b></div>
   <div class="row" style="margin-top:8px"><textarea id="mcpServers" rows="7" spellcheck="false" autocomplete="off" style="width:100%;max-width:640px;font-family:monospace;font-size:12px" placeholder="[]"></textarea></div>
   <div class="row" style="margin-top:8px"><button class="btn" onclick="mcpProbe()">Probe saved servers</button></div>
   <div class="status" id="mcpStatus"></div>
@@ -19871,7 +19878,7 @@ body[data-page="personal"] .card:not([data-sec="personal"]),body[data-page="admi
 <div class="card" id="tlsCard" data-sec="owner">
   <h2>Connection & TLS</h2>
   <div class="hint" id="tlsBody">Loading connection status&hellip;</div>
-  <div class="hint" style="margin-top:10px">How your Cairn gets its padlock (HTTPS) - worth having before phone apps or the /v1 door need to reach you from outside the house. <b>Proxy</b> - the usual choice: something in front of Cairn (like Caddy) already handles HTTPS and Cairn just sits behind it. <b>Local CA</b> - Cairn serves HTTPS itself using its own mini certificate authority; you install its small certificate once on each device that connects. <b>Existing certificate</b> - you already have a certificate file (from certbot or Caddy, say) and point Cairn at it. Cairn never asks the internet for certificates by itself - on purpose; getting public padlocks stays the proxy's job. Walkthroughs: <a href="help/tls" style="color:var(--accent)">Help &rarr; TLS & remote access</a>.</div>
+  <div class="hint" style="margin-top:10px">How your Noir gets its padlock (HTTPS) - worth having before phone apps or the /v1 door need to reach you from outside the house. <b>Proxy</b> - the usual choice: something in front of Noir (like Caddy) already handles HTTPS and Noir just sits behind it. <b>Local CA</b> - Noir serves HTTPS itself using its own mini certificate authority; you install its small certificate once on each device that connects. <b>Existing certificate</b> - you already have a certificate file (from certbot or Caddy, say) and point Noir at it. Noir never asks the internet for certificates by itself - on purpose; getting public padlocks stays the proxy's job. Walkthroughs: <a href="help/tls" style="color:var(--accent)">Help &rarr; TLS & remote access</a>.</div>
 </div>
 <div class="card" data-sec="personal">
   <h2>Agent face</h2>
@@ -20103,7 +20110,7 @@ body[data-page="personal"] .card:not([data-sec="personal"]),body[data-page="admi
         a.download = 'cairn-backup-' + new Date().toISOString().replace(/[:.]/g, '-') + '.cbk.json';
         document.body.appendChild(a); a.click(); a.remove();
         setTimeout(function(){ URL.revokeObjectURL(a.href); }, 5000);
-        var sk = parseInt(r.headers.get('X-Cairn-Backup-Skipped') || '0', 10);
+        var sk = parseInt(r.headers.get('X-Noir-Backup-Skipped') || '0', 10);
         msg('saved ' + b.size + ' bytes - store it OFF this machine; the password cannot be recovered' +
             (sk > 0 ? (' - ATTENTION: ' + sk + ' file(s) were SKIPPED, verify the backup and read the manifest') : ''));
       } catch(e) { msg('export failed: ' + e); }
@@ -20304,7 +20311,7 @@ body[data-page="personal"] .card:not([data-sec="personal"]),body[data-page="admi
   <div class="row" id="v1Row"><label>v1 door token</label>
     <input id="v1_token" type="password" autocomplete="off" oninput="v1KeyTouched = true" placeholder="write-only — bearer token for phone apps">
   </div>
-  <div class="hint" id="v1Hint"><b>Your Cairn's own door key — not a provider key.</b> It is the password YOUR Cairn asks of apps that use <i>it</i> as their model provider (phone apps pointed at your /v1 door). Locks the OpenAI-compatible /v1 door: phone apps must send <i>Authorization: Bearer &#60;this&#62;</i>. Only the owner's token governs; saving empty shuts the token door (the owner's own session still passes). Full walkthrough: <a href="help/v1" style="color:var(--accent)">Help &rarr; The v1 Door</a>. <span id="v1TokenStatus"></span></div>
+  <div class="hint" id="v1Hint"><b>Your Noir's own door key — not a provider key.</b> It is the password YOUR Noir asks of apps that use <i>it</i> as their model provider (phone apps pointed at your /v1 door). Locks the OpenAI-compatible /v1 door: phone apps must send <i>Authorization: Bearer &#60;this&#62;</i>. Only the owner's token governs; saving empty shuts the token door (the owner's own session still passes). Full walkthrough: <a href="help/v1" style="color:var(--accent)">Help &rarr; The v1 Door</a>. <span id="v1TokenStatus"></span></div>
   <button class="btn" style="margin-top:10px;margin-right:8px" onclick="doLogout()">Log out</button>
   <button class="btn" style="margin-top:10px;background:var(--accent2)" onclick="doLogoutAll()">Log out all devices</button>
   <div class="status" id="sessStatus"></div>
@@ -20387,7 +20394,7 @@ body[data-page="personal"] .card:not([data-sec="personal"]),body[data-page="admi
     <label style="display:inline-block;margin-left:12px"><input type="checkbox" id="importIdentity"> FULL TRUST: also OVERWRITE my memory files and system prompt from this archive (principal only)</label>
     <label style="display:inline-block;margin-left:12px"><input type="checkbox" id="importSecrets"> Import API keys & device secrets from this archive (vault-sealed CV1; never overwrites existing keys; principal only)</label>
   </div>
-  <div class="hint" id="impStatus">Exports are Agora-compatible (.cairn, format v4) - importable here, in Agora, or between accounts. Import accepts Cairn/Agora archives, ChatGPT exports, and Claude exports. Exports never include API keys; import can vault-seal them from your own archive via the opt-in checkbox. Ceilings: one .cairn archive builds up to 512&nbsp;MiB; files up to 48&nbsp;MB ride the classic JSON door (64&nbsp;MB cap); anything larger streams up raw to 4&nbsp;GB - your full Agora export with media fits.</div>
+  <div class="hint" id="impStatus">Exports are Agora-compatible (.cairn, format v4) - importable here, in Agora, or between accounts. Import accepts Noir/Agora archives, ChatGPT exports, and Claude exports. Exports never include API keys; import can vault-seal them from your own archive via the opt-in checkbox. Ceilings: one .cairn archive builds up to 512&nbsp;MiB; files up to 48&nbsp;MB ride the classic JSON door (64&nbsp;MB cap); anything larger streams up raw to 4&nbsp;GB - your full Agora export with media fits.</div>
 </div>
 
 <div class="card" data-sec="personal">
@@ -20965,7 +20972,7 @@ async function loadTlsCard() {
   el.innerHTML =
     '<div class="row"><label>Mode</label><select id="tlsMode">' + modes.map(function (m) { return '<option value="' + m[0] + '"' + (s.mode === m[0] ? ' selected' : '') + '>' + m[1] + '</option>'; }).join('') + '</select></div>' +
     '<div class="row"><button class="btn" onclick="tlsSaveMode()">Apply mode</button> <span id="tlsModeMsg" style="font-size:12px"></span></div>' +
-    '<div class="hint" style="margin:8px 0">Right now this socket is ' + (s.tls_served ? '<b>HTTPS</b>' : 'plain HTTP (fine behind a TLS proxy)') + (s.env_lock ? ' &middot; <b>CAIRN_TLS_MODE env lock is active (' + esc(s.env_lock) + ') - the environment wins over this page until it is removed</b>' : '') + (s.restart_required ? ' &middot; <b>restart required</b> to apply the saved mode' : '') + '.</div>' +
+    '<div class="hint" style="margin:8px 0">Right now this socket is ' + (s.tls_served ? '<b>HTTPS</b>' : 'plain HTTP (fine behind a TLS proxy)') + (s.env_lock ? ' &middot; <b>NOIR_TLS_MODE env lock is active (' + esc(s.env_lock) + ') - the environment wins over this page until it is removed</b>' : '') + (s.restart_required ? ' &middot; <b>restart required</b> to apply the saved mode' : '') + '.</div>' +
     '<div style="border-top:1px solid var(--border);margin:12px 0"></div>' +
     '<div class="row"><label>Extra names</label><input id="tlsSan" placeholder="hostnames / IPs your devices will use, e.g. myhome.local or a LAN address" style="max-width:420px"></div>' +
     '<div class="row"><button class="btn" onclick="tlsGenerate()">' + (s.ca_exists ? 'Reissue host cert (CA kept)' : 'Generate local CA + host cert') + '</button> <a class="btn" style="text-decoration:none' + (s.ca_exists ? '' : ';opacity:.5;pointer-events:none') + '" href="api/tls/ca.crt">Download CA certificate</a> <span id="tlsGenMsg" style="font-size:12px"></span></div>' +
@@ -21065,7 +21072,7 @@ async function savePersonaCard() {
   }
 }
 
-// S4f7: full account export (.cairn) + import (Cairn/Agora, ChatGPT, Claude).
+// S4f7: full account export (.cairn) + import (Noir/Agora, ChatGPT, Claude).
 async function exportAll() {
   setStatus('impStatus', 'warn', 'Exporting...');
   try {
@@ -21110,7 +21117,7 @@ async function importArchive() {
     try {
       const r = await fetch('api/import', {
         method: 'POST',
-        headers: {'X-Cairn-Raw': '1', 'X-Cairn-Restore': document.getElementById('importRestore').checked ? '1' : '0', 'X-Cairn-Restore-Identity': document.getElementById('importIdentity').checked ? '1' : '0', 'X-Cairn-Import-Secrets': document.getElementById('importSecrets').checked ? '1' : '0'},
+        headers: {'X-Noir-Raw': '1', 'X-Noir-Restore': document.getElementById('importRestore').checked ? '1' : '0', 'X-Noir-Restore-Identity': document.getElementById('importIdentity').checked ? '1' : '0', 'X-Noir-Import-Secrets': document.getElementById('importSecrets').checked ? '1' : '0'},
         body: f
       });
       const d = await r.json().catch(() => ({}));
@@ -22402,10 +22409,10 @@ self.addEventListener('fetch', (e) => {
 # any client that can reach the port can park as many workers as it likes,
 # each held for the full socket timeout. The semaphore below is the budget
 # the server never had: over budget gets an immediate 503 + close, never a
-# queued thread. Env CAIRN_MAX_WORKERS (default 64) is the whole knob; the
+# queued thread. Env NOIR_MAX_WORKERS (default 64) is the whole knob; the
 # reverse-proxy guidance in /help/tls still applies (limits there help too).
 import threading as _h16_th
-MAX_WORKERS = max(4, int(os.environ.get("CAIRN_MAX_WORKERS", "64") or 64))
+MAX_WORKERS = max(4, int(os.environ.get("NOIR_MAX_WORKERS", "64") or 64))
 _TLS_HANDSHAKE_TIMEOUT = 15.0  # T-A3: bound on one server-side TLS handshake
 HEADER_TIMEOUT_S = 15.0  # R9/B9/V12: request line + headers must arrive inside
                          # this. The long P1-B/H16 guard starts only once a
@@ -22413,7 +22420,7 @@ HEADER_TIMEOUT_S = 15.0  # R9/B9/V12: request line + headers must arrive inside
                          # and the header deadline re-arms for EVERY request
                          # on a keep-alive connection (handle_one_request).
 PER_IP_MAX = max(4, MAX_WORKERS // 4)  # R9/B9: per-address live-socket cap.
-                         # Enforced only when CAIRN faces clients directly
+                         # Enforced only when NOIR faces clients directly
                          # (TLS mode != proxy): behind a reverse proxy every
                          # client shares the proxy's address and the proxy
                          # owns slowloris defence - /help/tls guidance stands.
@@ -22662,7 +22669,7 @@ class MaraHandler(BaseHTTPRequestHandler):
         # the stock 501 for unimplemented methods (HEAD, PUT, ...) both call
         # this one hook. A free stack fingerprint on a public surface; the
         # house standard is neutral bytes. Product name only, no version.
-        return "CAIRN"
+        return "NOIR"
 
     def end_headers(self):
         # P1-B (audit): nosniff everywhere. Uploads are served from this
@@ -23739,7 +23746,7 @@ class MaraHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 return True
             return False
-        # No local instance truth (single-owner shape - today's CAIRN): the
+        # No local instance truth (single-owner shape - today's NOIR): the
         # header, when present, stays the only available check. Absence is the
         # documented legacy pass for that shape ONLY, and only while no
         # instance.conf exists. Put an instance.conf down and absence is
@@ -24301,7 +24308,7 @@ class MaraHandler(BaseHTTPRequestHandler):
                 if v:
                     _ru = _nc_up.urlsplit(v)
                     if _ru.scheme != "https" or not _ru.netloc or _ru.query or _ru.fragment:
-                        self._json(400, {"error": "oauth_redirect_base must be an https:// URL without query/fragment (blank = CAIRN default)"})
+                        self._json(400, {"error": "oauth_redirect_base must be an https:// URL without query/fragment (blank = NOIR default)"})
                         return
                 muts.append(("oauth_redirect_base", v.rstrip("/"), u["username"]))
             if "ms_client_id" in body:
@@ -24527,7 +24534,7 @@ class MaraHandler(BaseHTTPRequestHandler):
                     _sm11 = 0.50
                 muts.append(("conv_sim_min", "%.2f" % _sm11, u["username"]))
             # U14 (patch22): MCP server defs. Role-fenced (owner/admin):
-            # these execute on THIS box with CAIRN's own permissions, so
+            # these execute on THIS box with NOIR's own permissions, so
             # this is the one setting whose save path carries an
             # execution-privilege check, mirroring _mcp_servers_for at call
             # time. A save that does not actually change the defs passes
@@ -25433,7 +25440,7 @@ class MaraHandler(BaseHTTPRequestHandler):
                     return
                 set_setting("tls_mode", m, DAEMON_OWNER)
                 self._json(200, {"ok": True, "mode": m, "restart_required": True,
-                                 "env_lock": os.environ.get("CAIRN_TLS_MODE", "").strip() or None})
+                                 "env_lock": os.environ.get("NOIR_TLS_MODE", "").strip() or None})
             elif action == "generate":
                 try:
                     res = _tls_generate(str(body.get("san") or ""))
@@ -26674,7 +26681,7 @@ class MaraHandler(BaseHTTPRequestHandler):
         self._json(200, {"ok": True, "removed": removed})
 
     def _handle_cairnfiles(self):
-        # patch34 (K80 W2 2026-10-06): CAIRN Files — the per-chat file space
+        # patch34 (K80 W2 2026-10-06): NOIR Files — the per-chat file space
         # behind the "Chat files" attach drawer. Ops: list / mkdir / rmdir /
         # delete. folder is a LOGICAL column on attachments; disk layout stays
         # flat (uploads/<conv>/<stored_name>) so serve, quota, orphan prune,
@@ -26913,7 +26920,7 @@ class MaraHandler(BaseHTTPRequestHandler):
             return None
     def _handle_import(self):
         """S4f7: POST /api/import {name, data(b64), restore} - detect and import a
-        Cairn/Agora (.cairn/.agora), ChatGPT, or Claude archive into the caller's
+        Noir/Agora (.cairn/.agora), ChatGPT, or Claude archive into the caller's
         own account. restore (memory + system prompt + settings) writes instance
         identity state: this instance's principal (DAEMON_OWNER) only."""
         u = self._need_user()
@@ -26922,14 +26929,14 @@ class MaraHandler(BaseHTTPRequestHandler):
         # PATCH28/U19: two transport doors, one importer. The JSON door (the
         # long-standing default: base64 inside a JSON POST) is behaviorally
         # UNTOUCHED. The raw door (client streams the file bytes as the body
-        # with header X-Cairn-Raw: 1) lands in a 0600 temp file and the ZIP
+        # with header X-Noir-Raw: 1) lands in a 0600 temp file and the ZIP
         # opens from disk - a 634 MB .agora cannot be base64'd in a phone
         # browser and must not be buffered whole here either. Restore flags
-        # ride headers on this door (X-Cairn-Restore / X-Cairn-Restore-Identity).
+        # ride headers on this door (X-Noir-Restore / X-Noir-Restore-Identity).
         body = None
         raw = None
         raw_path = None
-        if self.headers.get("X-Cairn-Raw") == "1":
+        if self.headers.get("X-Noir-Raw") == "1":
             raw_path = self._read_raw_import(IMPORT_RAW_MAX)
             if raw_path is None:
                 return   # helper already answered (413/400/500)
@@ -26957,18 +26964,18 @@ class MaraHandler(BaseHTTPRequestHandler):
             if len(raw) > IMPORT_MAX_BYTES:
                 self._json(413, {"error": "archive too large (64 MB decoded cap)"})
                 return
-        restore = bool((body or {}).get("restore")) or self.headers.get("X-Cairn-Restore") == "1"
+        restore = bool((body or {}).get("restore")) or self.headers.get("X-Noir-Restore") == "1"
         if restore and u["username"] != DAEMON_OWNER:
             self._json(403, {"error": "restore (memory + system prompt + settings) is for this instance's principal only"})
             return
         # P1-D/B2 (round-3 audit): identity (memory + system prompt) split
         # from settings restore - its own flag, its own principal gate.
         # U21 (patch36): secrets import is its OWN door — opt-in, principal-only.
-        import_secrets = bool((body or {}).get("import_secrets")) or self.headers.get("X-Cairn-Import-Secrets") == "1"
+        import_secrets = bool((body or {}).get("import_secrets")) or self.headers.get("X-Noir-Import-Secrets") == "1"
         if import_secrets and u["username"] != DAEMON_OWNER:
             self._json(403, {"error": "secrets import is for this instance's principal only"})
             return
-        restore_identity = bool((body or {}).get("restore_identity")) or self.headers.get("X-Cairn-Restore-Identity") == "1"
+        restore_identity = bool((body or {}).get("restore_identity")) or self.headers.get("X-Noir-Restore-Identity") == "1"
         if restore_identity and u["username"] != DAEMON_OWNER:
             self._json(403, {"error": "identity restore (memory + system prompt) is for this instance's principal only"})
             return
@@ -27299,7 +27306,7 @@ class MaraHandler(BaseHTTPRequestHandler):
 # ─── Main ────────────────────────────────────────────────────────────────────
 START_TIME = time.time()
 
-# F20-BEGIN  (CAIRN updater. Canon: MaraDen/f20-design-20260923.md - any
+# F20-BEGIN  (NOIR updater. Canon: MaraDen/f20-design-20260923.md - any
 # deviation re-enters that doc first. E2E extracts this block verbatim.)
 #
 # Trust model in one breath: manifests are signed offline with an Ed25519 key
@@ -27337,7 +27344,7 @@ except BaseException as _f20_ce:
     _f20_VerifyKey = None
 
 # DEV-ERA TEST KEY - the ONLY line that changes at BETA (K80 offline master).
-_F20_PIN_B64 = "YhKNUUe5poamlv0DL7s33+pQVJfzKosG0KcRb/Ljdx8="  # CAIRN master key (ceremony 2026-09-24; FP a8d666d4...3497ca = sha256 hex of
+_F20_PIN_B64 = "YhKNUUe5poamlv0DL7s33+pQVJfzKosG0KcRb/Ljdx8="  # NOIR master key (ceremony 2026-09-24; FP a8d666d4...3497ca = sha256 hex of
   # the raw 32-byte public key per _f20_fp_hex; full FP published in INSTALL.md)
 _F20_SCHEMA = 1
 _F20_MANIFEST_MAX = 262144          # 256 KB manifest cap (canon)
@@ -27352,7 +27359,7 @@ _F20_PINFILE = STATE / "update-pin.json"
 _F20_STATEFILE = STATE / "update-state.json"
 _F20_PENDING = STATE / "update-pending.json"
 _F20_JOURNAL = STATE / "update-journal.json"  # B14 (0.6w): in-flight swap journal, reconciled on boot
-_F20_UA = "CAIRN-Updater/1"
+_F20_UA = "NOIR-Updater/1"
 _F20_VER_RE = _f20_re.compile(r"\d{1,4}(?:\.\d{1,4}){1,3}[A-Za-z0-9._-]{0,16}\Z")
 _F20_SHA_RE = _f20_re.compile(r"[0-9a-f]{64}\Z")
 
@@ -27593,7 +27600,7 @@ def _f20_validate(man, murl, force=False):
         sigb = _f20_b64.b64decode(sig, validate=True)
         key, ksrc, _kraw = _f20_pub()
         # CAUTION: cryptography's verify() is verify(SIGNATURE, DATA) - argument
-        # order proven on CAIRN (cryptography 43.0.0); flipping it fails closed
+        # order proven on NOIR (cryptography 43.0.0); flipping it fails closed
         # forever and looks like security working.
         key.verify(sigb, _f20_canon({k: v for k, v in man.items() if k != "sig"}))
     except Exception:
@@ -27862,8 +27869,8 @@ def _f20_smoke(staged_file):
                # 0.7c: CAIRN_* only. 0.7b's harness dual-set is what lets an update
                # stage INTO this era; a pre-0.7b harness cannot (smoke fails closed,
                # live untouched) - such boxes upgrade manually per INSTALL.md.
-               CAIRN_HOME=_f20_os.path.join(root, "home"), CAIRN_REGISTRY=_f20_os.path.join(root, "reg.db"),
-               CAIRN_PORT=str(port), CAIRN_HOST="127.0.0.1", VAULT_KEY_PATH=keyf)
+               NOIR_HOME=_f20_os.path.join(root, "home"), NOIR_REGISTRY=_f20_os.path.join(root, "reg.db"),
+               NOIR_PORT=str(port), NOIR_HOST="127.0.0.1", VAULT_KEY_PATH=keyf)
     logf = open(_f20_os.path.join(root, "smoke.log"), "wb")
     proc = None
     try:
@@ -28492,9 +28499,9 @@ TLS_SERVED = False            # True only when main() wrapped the live socket
 _TLS_RUNTIME = "proxy"        # mode actually in effect since boot
 _TLS_SERVED_CERT = None       # cert path the live socket serves (None = plain)
 def _tls_mode():
-    # env CAIRN_TLS_MODE is the operator lock (wins over the UI; keeps systemd
+    # env NOIR_TLS_MODE is the operator lock (wins over the UI; keeps systemd
     # authority honest on managed boxes); the owner settings row is the UI path.
-    m = (os.environ.get("CAIRN_TLS_MODE", "").strip().lower()
+    m = (os.environ.get("NOIR_TLS_MODE", "").strip().lower()
          or str(get_setting("tls_mode", "proxy", DAEMON_OWNER) or "").strip().lower())
     return m if m in TLS_MODES else "proxy"
 def _tls_ext_paths():
@@ -28822,7 +28829,7 @@ def _tls_status():
         else:
             cert_error = "key path not saved (write-only fields)"
     restart_required = (_TLS_RUNTIME != m) or (TLS_SERVED != (apair[0] is not None)) or (apair[0] is not None and apair[0] != _TLS_SERVED_CERT)
-    env_lock = os.environ.get("CAIRN_TLS_MODE", "").strip() or None
+    env_lock = os.environ.get("NOIR_TLS_MODE", "").strip() or None
     cpath, kpath = _tls_ext_paths()
     # T-B13: is the on-disk CA name-constrained? None = cannot tell (no CA
     # or openssl unreadable); False = pre-T-B13 unconstrained CA - residual:
@@ -28862,14 +28869,14 @@ def _v18_transport_stance(bind_host, tls_served):
     None when the bind needs no warning."""
     if tls_served or _host_is_loopback(bind_host):
         return None
-    acked = (os.environ.get("CAIRN_ALLOW_INSECURE_LAN") or "").strip() == "1"
+    acked = (os.environ.get("NOIR_ALLOW_INSECURE_LAN") or "").strip() == "1"
     return ("PLAINTEXT HTTP on %s - the session cookie cannot carry the Secure "
             "flag on this transport, so logins DO stick and tokens travel in "
             "the clear for anyone on the path.%s"
             % (bind_host,
-               " Acknowledged via CAIRN_ALLOW_INSECURE_LAN=1." if acked else
-               " Put TLS in front (/help/tls), bind CAIRN_HOST=127.0.0.1, or "
-               "set CAIRN_ALLOW_INSECURE_LAN=1 to run plain-on-LAN knowingly."))
+               " Acknowledged via NOIR_ALLOW_INSECURE_LAN=1." if acked else
+               " Put TLS in front (/help/tls), bind NOIR_HOST=127.0.0.1, or "
+               "set NOIR_ALLOW_INSECURE_LAN=1 to run plain-on-LAN knowingly."))
 def _tls_wire(server):
     """H08: TLS wiring with fail-closed semantics. Returns True when TLS will be
     served (T-A3: per-connection wrap - the listener itself stays plain and
@@ -28898,7 +28905,7 @@ def _tls_wire(server):
                     "TLS mode=%s but cert %s could not be loaded (%s: %s) - "
                     "REFUSING to serve plaintext on non-loopback %s:%d. Fix the "
                     "cert, switch TLS mode to proxy, or boot once with "
-                    "CAIRN_HOST=127.0.0.1 as the maintenance door."
+                    "NOIR_HOST=127.0.0.1 as the maintenance door."
                     % (_TLS_RUNTIME, _cert, type(_h8e).__name__, _h8e, HOST, PORT))
             log.error("TLS: mode=%s but %s could not be loaded (%s: %s) - PLAIN on LOOPBACK ONLY (maintenance door); fix the cert or switch mode",
                       _TLS_RUNTIME, _cert, type(_h8e).__name__, _h8e)
@@ -28908,7 +28915,7 @@ def _tls_wire(server):
             "TLS mode=%s but no usable cert+key pair exists - REFUSING to serve "
             "plaintext on non-loopback %s:%d. Generate the local CA, save an "
             "existing pair, switch TLS mode to proxy, or boot once with "
-            "CAIRN_HOST=127.0.0.1 as the maintenance door."
+            "NOIR_HOST=127.0.0.1 as the maintenance door."
             % (_TLS_RUNTIME, HOST, PORT))
     log.error("TLS: mode=%s but no usable cert+key pair exists - PLAIN on LOOPBACK ONLY (maintenance door); generate the local CA or save an existing pair", _TLS_RUNTIME)
     return False
@@ -28927,7 +28934,7 @@ def main():
         sys.exit(_cli_reset_password(sys.argv[1:]))
     _p1i_file_mode_sweep()   # P1-I/S09/S20: state 0700, DBs 0600, uploads 0600
     _export_tmp_sweep()      # V20/T-B21: reap export temps from crashed builds
-    _f26_seed_tier_files()   # F26: seed lore-free Tier-1 base where absent (no-op on CAIRN)
+    _f26_seed_tier_files()   # F26: seed lore-free Tier-1 base where absent (no-op on NOIR)
     _sp_history_migrate()    # T-A1 (0.6w): archive pre-buckets flat history entries (once)
     reload_identity()
     _p1c_install_dispatch_safety()  # P1-C/F9: no handler bug may leave a client dangling
@@ -28950,7 +28957,7 @@ def main():
     # silently downgrading a formerly-HTTPS address to plaintext. Loopback
     # keeps the maintenance-door degrade. Wiring lives in _tls_wire().
     _tls_wire(server)
-    log.info("cairn daemon v%s // %s // %s (sha %s) listening on %s:%d (pid %d)",
+    log.info("noir daemon v%s // %s // %s (sha %s) listening on %s:%d (pid %d)",
              VERSION, BUILD_SERIES, BUILD_NAME, DAEMON_BUILD_SHA[:12], HOST, PORT, os.getpid())
     _v18_warn = _v18_transport_stance(HOST, TLS_SERVED)
     if _v18_warn:

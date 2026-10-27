@@ -1,4 +1,4 @@
-# CAIRN
+# NOIR — Network of Ongoing Intelligence and Recall
 
 Your own self-hosted AI home. A single-file Python daemon that gives you a
 personal, private, multi-user chat assistant with your own model keys (BYOK),
@@ -41,7 +41,7 @@ keeping the lights on.
 
 ```bash
 sudo apt install python3 python3-cryptography tesseract-ocr ffmpeg
-python3 cairn.py           # listens on http://127.0.0.1:8470 (loopback)
+python3 noir.py           # listens on http://127.0.0.1:8470 (loopback)
 # open http://localhost:8470 on that machine and follow the first-boot wizard
 ```
 
@@ -70,7 +70,7 @@ redirects — which our updater requires by design).
 
 Copyright (c) 2026 K80.DEV
 
-CAIRN is licensed under the **GNU AGPL-3.0-or-later** (see `LICENSE`).
+NOIR is licensed under the **GNU AGPL-3.0-or-later** (see `LICENSE`).
 
 - Free to use, fork, and modify — including running it as a network service
   for others, as long as you keep the source open under the same license.
@@ -80,7 +80,7 @@ CAIRN is licensed under the **GNU AGPL-3.0-or-later** (see `LICENSE`).
 
 ## Built with AI assistance
 
-CAIRN was designed and built by **K80.DEV with substantial AI assistance**
+NOIR was designed and built by **K80.DEV with substantial AI assistance**
 (the daemon's own resident goblin, Mara, wrote much of this codebase and all
 of its regression harnesses). The audit trails in the comments are real.
 

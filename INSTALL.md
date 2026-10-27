@@ -1,4 +1,4 @@
-# Installing CAIRN (pre-release)
+# Installing NOIR (pre-release)
 
 > Read the PRE-RELEASE banner in [README.md](README.md) first. LAN-only for now.
 
@@ -14,7 +14,7 @@ lives at `updates/<version>/cairn.py` inside its tag, and its bytes are
 attested by the signed manifest that shipped with it
 (`updates/manifest.json` at that tag):
 ```bash
-curl -fLO https://raw.githubusercontent.com/K80-DEV/cairn/refs/tags/v0.7e/updates/0.7e/cairn.py
+curl -fLO https://raw.githubusercontent.com/K80-DEV/noir/refs/tags/v0.7e/updates/0.7e/cairn.py
 sha256sum cairn.py
 # expected: 62e25deb8eb1a6c652be6c62fe2946863d24fb73f9b377568e2d9ec8947a4e81  cairn.py (1253875 bytes)
 ```
@@ -42,10 +42,10 @@ at the same fact from inside the box, independent of this repo.
 
 ## 3. First boot
 ```bash
-mkdir -p ~/cairn
-export CAIRN_HOME="$HOME/cairn/mh"          # state tree (defaults below need root)
-export CAIRN_REGISTRY="$HOME/cairn/reg.db"  # account registry
-python3 cairn.py             # listens on 127.0.0.1:8470 (loopback only)
+mkdir -p ~/noir
+export NOIR_HOME="$HOME/noir/mh"          # state tree (defaults below need root)
+export NOIR_REGISTRY="$HOME/noir/reg.db"  # account registry
+python3 noir.py             # listens on 127.0.0.1:8470 (loopback only)
 ```
 > The default locations (everything under `/var/lib/cairn`) assume a
 > system-service install. Running as a regular user without those two exports
@@ -54,7 +54,9 @@ python3 cairn.py             # listens on 127.0.0.1:8470 (loopback only)
 
 > **Legacy spelling:** the `MARA_*` environment names are gone. 0.7b kept
 > only `MARA_HOME` / `MARA_REGISTRY` / `MARA_HOST` / `MARA_PORT` as
-> one-release fallbacks; **0.7c removed those too.** `CAIRN_*` is the only
+> one-release fallbacks; **0.7c removed those too.** `NOIR_*` is the only
+> prefix (pre-0.8 releases shipped it as `CAIRN_*`; 0.8+ mirrors the old names
+> automatically — if you are installing pinned v0.7e bytes, use the `CAIRN_*` names).
 > spelling from here on — if you are still exporting `MARA_*`, switch now.
 
 Prove it is alive before touching a browser:
@@ -80,8 +82,8 @@ lives (§4 — you can defer, but read it first).
 > the machine — that renders the form only; claiming still needs the token —
 > so whoever is on your LAN cannot claim the box before you do.
 
-State lives under `$CAIRN_HOME/state/` (default `/var/lib/cairn/state/`); the
-account registry is `$CAIRN_REGISTRY` (default `/var/lib/cairn/users.db`). Back it
+State lives under `$NOIR_HOME/state/` (default `/var/lib/cairn/state/`); the
+account registry is `$NOIR_REGISTRY` (default `/var/lib/cairn/users.db`). Back it
 all up any time from Settings → Backup (password-encrypted, everything included).
 Current builds export authenticated (v2) backup containers. Older v1 files
 carry no integrity signature: current builds verify their structure but
@@ -132,14 +134,14 @@ The built-in Help Center mirrors all of this under the topic **The Lockbox**.
 Proven shape (Debian 13; runs as an unprivileged user, loopback bind):
 ```ini
 [Unit]
-Description=CAIRN daemon
+Description=NOIR daemon
 After=network.target
 
 [Service]
 User=cairn
 WorkingDirectory=/var/lib/cairn
-Environment=CAIRN_HOME=/var/lib/cairn
-Environment=CAIRN_REGISTRY=/var/lib/cairn/users.db
+Environment=NOIR_HOME=/var/lib/cairn          # pre-0.8: CAIRN_HOME (state paths unchanged)
+Environment=NOIR_REGISTRY=/var/lib/cairn/users.db
 ExecStart=/usr/bin/python3 /opt/cairn/cairn.py
 Restart=on-failure
 
@@ -172,7 +174,7 @@ a reverse proxy that terminates TLS. Two kinds of routes:
   for residents that do not exist.
 
 ```caddyfile
-cairn.example.org {
+noir.example.org {
     # front desk (apex)
     redir / /login 301
     handle /login*      { reverse_proxy 127.0.0.1:8470 }
@@ -209,14 +211,14 @@ The updater is **off by default** and **pull-only**.
 1. Finish the wizard, sign in as the owner.
 2. Settings → System card → enable updates.
 3. Set the manifest URL to
-   `https://raw.githubusercontent.com/K80-DEV/cairn/main/updates/manifest.json`
+   `https://raw.githubusercontent.com/K80-DEV/noir/main/updates/manifest.json`
    (recent builds know this URL already; only older builds need it pasted once).
 4. **Check** → the channel's current release should appear, with its notes.
    **Download** → it stages and verifies sha256 + signature. **Install** → the
    daemon takes a pre-update snapshot, gold-boot-smoke-tests the staged file
    in a scratch environment, swaps, and restarts itself.
 5. Watch the console/journal: the boot line should read
-   `cairn daemon v<new-version> // BASALT // GHOSTLIGHT (sha <new-sha>)`.
+   `noir daemon v<new-version> // BASALT // GHOSTLIGHT (sha <new-sha>)`.
    "Ghostlight" is the held build name for the whole Basalt (0.X) series through 1.0;
    each build differs only by its version letter and sha.
 6. The next Check should say you are up to date.
@@ -241,9 +243,9 @@ through the shipped updater code itself. As the daemon user, from a terminal:
 ```
 python3 - <<'EOF'
 import importlib.util, json, sys, urllib.request
-spec = importlib.util.spec_from_file_location("cairn", "/path/to/cairn.py")  # your live file
+spec = importlib.util.spec_from_file_location("noir", "/path/to/noir.py")  # your live file
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-url = ("https://raw.githubusercontent.com/K80-DEV/cairn/main"
+url = ("https://raw.githubusercontent.com/K80-DEV/noir/main"
        "/updates/bootstrap/manifest-rotation-nonce17.json")
 err, summ = m._f20_check(force=True, murl=url)   # force skips ONLY the version gate
 print("check:", err or summ)
@@ -283,7 +285,7 @@ rename era is closed.**
 
 `cairn-migrate.py` ships with the release (download from the release channel or use the copy in `updates/0.7a/`). Run it once, as root:
 ```bash
-curl -fLO https://raw.githubusercontent.com/K80-DEV/cairn/refs/tags/v0.7a/updates/0.7a/cairn-migrate.py
+curl -fLO https://raw.githubusercontent.com/K80-DEV/noir/refs/tags/v0.7a/updates/0.7a/cairn-migrate.py
 sudo python3 cairn-migrate.py --dry-run   # reads reality, writes nothing
 sudo python3 cairn-migrate.py             # the real crossing
 ```

@@ -1,17 +1,17 @@
 # Commercial licensing
 
-CAIRN is dual-licensed, the way Qt and MySQL do it:
+NOIR is dual-licensed, the way Qt and MySQL do it:
 
 - **Community:** GNU AGPL-3.0-or-later (the text in `LICENSE`). That file is
   the actual license grant. This page is a plain-language guide, not a
   contract, and it cannot widen or narrow the AGPL.
 - **Commercial:** for uses where you cannot or do not want to comply with
   the AGPL — most commonly, building a **closed-source** product or service
-  on CAIRN.
+  on NOIR.
 
 ## What you can do for free (under the AGPL)
 
-- Run CAIRN for yourself, your family, your friends, your club.
+- Run NOIR for yourself, your family, your friends, your club.
 - Run it for your company, internally.
 - Offer it as a hosted service **to the public** — as long as you provide
   the corresponding source of your version (including any modifications)
@@ -25,22 +25,22 @@ real; using it as a moat for a closed derivative is what costs money.
 
 ## When you need a commercial license
 
-- You want to embed or ship CAIRN (or a derived daemon) inside a product
+- You want to embed or ship NOIR (or a derived daemon) inside a product
   whose source you cannot release under the AGPL.
-- You want the right to use the CAIRN name/brand beyond attribution.
+- You want the right to use the NOIR name/brand beyond attribution.
 - You want support terms, an SLA, or an indemnity conversation.
 
 ## How to get one
 
 Open an issue you'd be comfortable making public, or use the contact
 listed on [github.com/K80-DEV](https://github.com/K80-DEV). Say what you
-want to build and how CAIRN fits in it. Pricing scales with what you're
+want to build and how NOIR fits in it. Pricing scales with what you're
 doing it for — a hobby wrapper and a funded product are different
 conversations, and we'd rather have both than neither.
 
 ## What a commercial license will never be
 
-- A claim on your data, your keys, or your models. CAIRN is BYOK; that
+- A claim on your data, your keys, or your models. NOIR is BYOK; that
   doesn't change under any license.
 - A backdoor or a phone-home. The update check stays opt-in and the
   telemetry stays at zero in every licensed build, because those properties
