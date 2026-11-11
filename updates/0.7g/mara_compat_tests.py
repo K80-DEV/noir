@@ -3,7 +3,7 @@
     usage: mara_compat_tests.py <abs-path-to-daemon.py> <abs-scratch-dir>
 
 Why this file exists. The auditor's harness (unit_tests.py / proc_tests.py)
-proves their 16 findings. It proves NOTHING about the thing Katy actually asked
+proves their 16 findings. It proves NOTHING about the thing K80 actually asked
 for, which is "an existing install must be able to take this release without
 its operator touching anything". That is a cross-lineage question: prod reads
 CAIRN_*, the audited build reads NOIR_*, prod's unit is marahome.service while

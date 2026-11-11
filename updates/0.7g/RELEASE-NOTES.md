@@ -1,7 +1,7 @@
 # NOIR 0.7g — second external audit release (AUDIT2) + cross-lineage compatibility
 
-Payload: `cairn.py` — 1,625,068 bytes — sha256 `e2598ae94b8770258b5f7e945611373bcf6d3c221f92462c37dbfd5a67bdd093`
-Manifest: `manifest-0.7g-unsigned.json` (nonce 24) — **not publishable until the master key signs it**
+Payload: `cairn.py` — 1625052 bytes — sha256 `3c7f232748f852aebc40be36025af8ecd4455822cd3276a219e96c155e95327d`
+Manifest: `manifest-0.7g-signed.json` (nonce 24) — signed on DragonDen01 with the release key (fp `d7ea6e53…`), key never left that box. `manifest-0.7g-unsigned.json` is kept as the pre-signature artifact. `updates/manifest.json` points here.
 Build basis: audited tree `68602b8` + the auditor's fix band + the compat band below.
 
 **Per-finding descriptions are withheld on purpose until this release is signed and installable.** The
@@ -75,4 +75,4 @@ front-end was reviewed by pattern, not line by line.
 
 ## Ship scrub (why this sha differs from the working copy)
 
-The publish candidate is the gated build with eight comment lines genericised (personal name -> role, two infra names -> neutral wording), per the standing rule that shipped artifacts carry zero personal info. No code token changed and the line count is identical; the scrub is reproducible with build/make_ship_07g.py and every gate above was run on these exact bytes.
+The publish candidate is the gated build with eight comment lines rewritten (K80 ruling 2026-11-11: the name in decision-history comments is fine as long as it reads K80, so personal name -> `K80`; two infra host names -> neutral wording, which is the standing shipped-artifacts rule). No code token changed and the line count is identical; the scrub is reproducible with `python3 build/scrub_k80.py <working-copy> <publish-candidate>` and every gate above was run on these exact bytes.

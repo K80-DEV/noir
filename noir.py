@@ -3448,7 +3448,7 @@ def run_compaction(conv_id: str, messages: list, model_cfg: dict, status=None, u
 # P3.6e: model-facing annotation appended to assistant rows that were
 # stopped mid-generation (stored content stays pristine)
 STOPPED_SCAR = "[stopped by user mid-generation - this answer is incomplete]"
-# ─── PATCH44/U28: manual "Context Compact" (Katy 2026-10-07: "I need to be
+# ─── PATCH44/U28: manual "Context Compact" (K80 2026-10-07: "I need to be
 # able to initiate a compaction as well.") — POST /api/compact folds THIS
 # conversation on a daemon thread; /api/ctx carries the job so the badge
 # shows it and a reloaded tab re-attaches. A manual fold NEVER trims: if the
@@ -3882,7 +3882,7 @@ def _vault_saved_path():
 
 def _vault_key_candidates():
     # 0.7a key ladder (K80 ruling 2026-09-28): env VAULT_KEY_PATH wins when
-    # explicitly set (DragonHoard01 staging, the F20 smoke harness, systemd
+    # explicitly set (the staging host, the F20 smoke harness, systemd
     # drop-ins), then the saved pointer file, then the canonical /run path,
     # then the box-generated vault.key in BASE. Deduped, in order.
     c = []
@@ -4275,7 +4275,7 @@ def vault_decrypt(master, username, name, blob):
 
 # NC-CONNECTOR-BEGIN  (E2E extracts this block verbatim: shipped code, not a reimplementation)
 # ---------------------------------------------------------------------------
-# F12.1 Nextcloud connector (DragonHoard / VM 101 'Cloud').
+# F12.1 Nextcloud connector (key server / 'Cloud' share).
 # Sealed-secret pattern, canon F12.1: the app password lives ONLY in the vault
 # (entry 'nextcloud-apppw'). vault_use() decrypts in-process, hands the
 # plaintext to use_fn, and a leak guard refuses to return any use_fn result
@@ -17570,7 +17570,7 @@ function addAssistantMsg(text, cont) {  // U42: cont = follow-on block in the sa
 
 var ctxBudget = 0;
 /* PATCH43/U27: ONE painter for the top-bar context meter. Agora semantics
-   (Katy ruling): the badge counts THIS conversation's context usage
+   (K80 ruling): the badge counts THIS conversation's context usage
    (compaction handoff + live rows); the system prompt is tooltip-only.
    ⚠ fires on the real trigger: conversation + prompt vs the compaction
    point. Shared by conv-load and turn-done so the two can never disagree. */
@@ -17967,7 +17967,7 @@ function renderToolSheet(name, kind, rawArgs, sd){
     }
   }
   b.appendChild(toolSheetEl('tslab', 'Result:'));
-  /* PATCH60/U43 (Agora parity, Katy screenshot 2026-10-08): the Result section
+  /* PATCH60/U43 (Agora parity, K80 screenshot 2026-10-08): the Result section
      previews the delivered file (inline image like Agora's view_image sheet;
      download link for other kinds) and renders structured JSON results as
      key/value chip rows instead of one raw blob. */
@@ -18636,7 +18636,7 @@ $('qsWeb').addEventListener('click', function () { qsState.web = !qsState.web; q
 $('qsShell').addEventListener('click', function () { qsState.shell = !qsState.shell; qsSave(); qsPaint(); });
 $('qsRoll').addEventListener('click', function () { qsState.roll = !qsState.roll; qsSave(); qsPaint(); });  // PATCH50/U33
 $('qsBtn').addEventListener('click', function (e) { e.stopPropagation(); toggleCpop(qsPop); });
-/* PATCH44/U28: Context Compact — Katy asked for the wheel, not just the airbag.
+/* PATCH44/U28: Context Compact — K80 asked for the wheel, not just the airbag.
    Kicks POST api/compact for THIS chat; the fold runs server-side and the
    badge paints it via compact_job. Confirm-first: it spends her model/key. */
 $('qsCompact').addEventListener('click', function (e) {
@@ -23183,7 +23183,7 @@ class MaraHandler(BaseHTTPRequestHandler):
             _m25 = [{"role": r[0], "content": r[1]} for r in _rows25]
             if _sum25 and _sum25[0]:
                 _m25.insert(0, {"role": "system", "content": _sum25[0]})
-            # PATCH43/U27 (Katy ruling 2026-10-07): the BADGE is context
+            # PATCH43/U27 (K80 ruling 2026-10-07): the BADGE is context
             # usage only — compaction handoff + live uncompacted rows, the
             # same rows the next request actually carries from history. The
             # system prompt is a separate field (tooltip), never folded into
@@ -24109,7 +24109,7 @@ class MaraHandler(BaseHTTPRequestHandler):
             self._handle_avatar_post()
         elif path == "/api/avatar/reset":
             self._handle_avatar_reset()
-        elif path == "/api/compact":  # PATCH44/U28: manual context fold (Katy's ask)
+        elif path == "/api/compact":  # PATCH44/U28: manual context fold (K80's ask)
             u = self._need_user()
             if not u:
                 return

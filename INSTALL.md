@@ -14,9 +14,9 @@ lives at `updates/<version>/cairn.py` inside its tag, and its bytes are
 attested by the signed manifest that shipped with it
 (`updates/manifest.json` at that tag):
 ```bash
-curl -fLO https://raw.githubusercontent.com/K80-DEV/noir/refs/tags/v0.7f/updates/0.7f/cairn.py
+curl -fLO https://raw.githubusercontent.com/K80-DEV/noir/refs/tags/v0.7g/updates/0.7g/cairn.py
 sha256sum cairn.py
-# expected: 514f3cea4e6b2594a9dc6b25b6a32da4cc46e963e75ed6b3b41964bff20f91f5  cairn.py (1574725 bytes)
+# expected: 3c7f232748f852aebc40be36025af8ecd4455822cd3276a219e96c155e95327d  cairn.py (1625052 bytes)
 ```
 > 0.6x-era tags still ship `marahome.py` — that is the era spelling, not an
 > error. Coming from one of those? You arrive through the ferry in §8.

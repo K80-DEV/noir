@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "version": "0.7g",
+  "min_allowed_version": "0.6",
+  "nonce": 24,
+  "base_url": "https://raw.githubusercontent.com/K80-DEV/noir/main/updates/0.7g/",
+  "notes": "NOIR 0.7g - second external audit release (AUDIT2) plus cross-lineage compatibility. Carries the auditor's accepted fix band: B7 stop-interrupt now unwinds a blocked provider read at the socket, F4 stored XSS closed on the owner Settings page (prompt id allow-list), F1 provider calls pinned through the shared opener, F10/F11 process-group handling for shell jobs and timeouts, F3 raw-import gate no longer trusts a header alone, F5-F19 as filed (CSP, log forging, prompt-projection cache cap, archive caps, OCR argument injection, DNS-repinning, vector-cache ordering, orphan embeddings, update allow-list). B12 SIGTERM now shuts down cleanly, B13 refuses a bad port at boot instead of crashing later, B15 stops logging client hangups as tracebacks, B5 rollback text names the real unit, B1/B2/B3/B16/B17 accepted. G9 is a behaviour change: /v1 no longer supplies the owner's persona, memory files or selected skills to third-party apps - it sends a minimal prompt unless the operator opts in with NOIR_V1_IDENTITY=full. Cross-compat for installs that predate the CAIRN->NOIR rename: CAIRN_* and NOIR_* environment names are both honoured (NOIR_* wins when both are set), the X-Cairn-* and X-Noir-* import/export headers are both accepted, and the service unit name is honoured from CAIRN_UNIT/NOIR_UNIT instead of being derived from the filename. Internal identifiers remain deliberately unchanged so existing installs upgrade without config edits. Upgrade contract unchanged: ALPHA, auto-update stays owner-confirmed, databases are never auto-restored. Crossers from 0.6x run the migration ferry (cairn-migrate.py, --dry-run first).",
+  "released_utc": "2026-11-11T18:47:36Z",
+  "files": [
+    {
+      "path": "cairn.py",
+      "sha256": "3c7f232748f852aebc40be36025af8ecd4455822cd3276a219e96c155e95327d",
+      "bytes": 1625052
+    }
+  ],
+  "sig": "p4fqYzWnqtRgikhA2HnMsPXAHl9hsbCWZ/wrQp3PtPaxIX50USMJHoVfGEYFoqpnuZSwD0I2w4O6eFRjKsS7AA=="
+}
